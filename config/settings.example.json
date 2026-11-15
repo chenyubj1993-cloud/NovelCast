@@ -1,4 +1,5 @@
 {
+  "output_dir": "output",
   "llm_api": {
     "base_url": "https://api.mimoai.com/v1",
     "api_key": "your_llm_api_key_here",

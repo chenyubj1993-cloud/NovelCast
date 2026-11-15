@@ -33,3 +33,23 @@ if __name__ == "__main__":
     test_plan_estimate()
     test_parser_defaults()
     print("cli tests passed")
+
+
+def test_output_dir_from_config(tmp_path):
+    from novelcast.config_manager import ConfigManager
+
+    cfg = ConfigManager.__new__(ConfigManager)
+    cfg.config = {"output_dir": str(tmp_path / "myout")}
+    cfg.output_override = None
+    path = cfg.get_output_dir("测试书")
+    assert path == tmp_path / "myout" / "测试书_有声书"
+    assert path.is_dir()
+
+
+def test_output_override_wins(tmp_path):
+    from novelcast.config_manager import ConfigManager
+
+    cfg = ConfigManager.__new__(ConfigManager)
+    cfg.config = {"output_dir": str(tmp_path / "myout")}
+    cfg.output_override = tmp_path / "explicit"
+    assert cfg.get_output_dir("测试书") == tmp_path / "explicit"

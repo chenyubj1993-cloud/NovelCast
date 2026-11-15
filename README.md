@@ -55,6 +55,7 @@ novelcast run input/全职高手.epub -n 2 -o output/全职高手
 ```
 
 - 全部参数见 `novelcast run --help`；`--tts edge` 可以不下载模型先跑通整条流程。
+- 输出目录优先级：`-o/--output` > `config/settings.json` 的 `output_dir` > 默认 `output/`；每本书会自动加 `<书名>_有声书` 子目录。
 - 输入格式：`.txt` / `.epub` / `.docx` / `.doc`（`.mobi` 需先转换）。
 - 旧脚本 `python scripts/generate.py ...` 仍然可用，但 `-c` 在那里表示「前 N 章」，而 `novelcast run` 的 `--chapters 2` 表示「第 2 章」，两者含义不同。
 

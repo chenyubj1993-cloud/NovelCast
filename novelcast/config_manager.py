@@ -31,6 +31,9 @@ LLM_RAW_DIR.mkdir(exist_ok=True)
 # 默认配置
 # ============================================================
 DEFAULT_CONFIG = {
+    # 输出根目录（相对路径按项目根解析；每本书会建「<书名>_有声书」子目录）
+    "output_dir": "output",
+
     # LLM API配置（用于对话分割）
     "llm_api": {
         "base_url": "https://api.mimoai.com/v1",
@@ -346,8 +349,18 @@ class ConfigManager:
         return book_dir
 
     def get_output_dir(self, book_name: str) -> Path:
-        """获取输出目录"""
-        output_dir = self.output_override or OUTPUT_DIR / f"{self._safe_filename(book_name)}_有声书"
+        """获取输出目录。
+
+        优先级：--output 显式目录 > 配置 output_dir（相对路径按项目根解析）
+        > 默认 output/。
+        """
+        if self.output_override:
+            output_dir = self.output_override
+        else:
+            root = Path(str(self.config.get("output_dir") or "output")).expanduser()
+            if not root.is_absolute():
+                root = PROJECT_ROOT / root
+            output_dir = root / f"{self._safe_filename(book_name)}_有声书"
         output_dir.mkdir(parents=True, exist_ok=True)
         return output_dir
 
