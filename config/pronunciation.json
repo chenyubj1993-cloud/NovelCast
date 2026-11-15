@@ -1,0 +1,10 @@
+{
+  "_doc": "多音字发音表。键=词，值=空格分隔的拼音（带声调，按字对齐）。IndexTTS-2.5 会按 <字|拼音> 强制发音。例：重庆 -> CHONG2 QING4；银行 -> YIN2 HANG2；兴欣 -> XING1 XIN1。",
+  "words": {
+    "兴欣": "XING1 XIN1",
+    "银行": "YIN2 HANG2",
+    "长大": "ZHANG3 DA4",
+    "还有": "HAI2 YOU3",
+    "重庆": "CHONG2 QING4"
+  }
+}

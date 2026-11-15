@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.venv/
+venv/
+
+# IDE / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# 本地配置与密钥（示例配置保留在 config/settings.example.json）
+config/settings.json
+config/api_config.json
+.env
+
+# 本地数据与产物，绝不入库
+input/
+output/
+data/
+models/
+third_party/
+llm_cache/
+llm_raw_responses/
+.vendor/
+.wheels/
+.tmp*/
+*.wav
+*.mp3
+*.m4b
+*.tgz
+*.zip
+
+# 例外：示例配置与测试夹具
+!config/settings.example.json
+!tests/fixtures/**
