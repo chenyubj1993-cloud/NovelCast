@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+﻿#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
 有声书生成主脚本
@@ -8,16 +8,17 @@
   阶段2: TTS生成音频 → 合并输出
 """
 
-import os
-import sys
-import json
-import time
-import asyncio
 import argparse
+import asyncio
+import json
 import shutil
-from pathlib import Path
-from typing import List, Dict, Optional, Tuple
+import sys
+import time
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+from novelcast.log import log
 
 # 添加项目根目录到路径
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -27,25 +28,34 @@ _vendor_dir = Path(__file__).parent.parent / ".vendor"
 if _vendor_dir.is_dir():
     sys.path.insert(0, str(_vendor_dir))
 
-from modules.config_manager import get_config, ConfigManager
-from modules.novel_reader import read_novel, split_chapters, Chapter
-from modules.dialogue_splitter import (
-    split_dialogues_async, DialogueLine, clear_global_character_map,
-    get_global_character_map, get_async_llm_client
+from novelcast.audio_processor import (
+    format_duration,
+    get_wav_duration,
+    merge_wav_files,
+    split_audio_by_duration,
 )
-from modules.character_registry import (
-    build_roster_async, load_roster, save_roster, roster_to_prompt_map
+from novelcast.cast_manager import apply_cast, build_cast, load_cast, print_cast, save_cast
+from novelcast.character_registry import build_roster_async, load_roster, roster_to_prompt_map, save_roster
+from novelcast.config_manager import ConfigManager, get_config
+from novelcast.coverage_analyzer import analyze_coverage, print_coverage_report, print_summary
+from novelcast.dialogue_splitter import (
+    DialogueLine,
+    clear_global_character_map,
+    get_async_llm_client,
+    split_dialogues_async,
 )
-from modules.cast_manager import build_cast, save_cast, load_cast, apply_cast, print_cast
-from modules.script_qa import alignment, repair_tail, repair_attributions, repair_narration, dedupe_adjacent, format_gap
-from modules.llm_review import review_unknown
-from modules.voice_assigner import assign_voices
-from modules.tts_generator import generate_tts_batch, save_wav
-from modules.audio_processor import (
-    get_wav_duration, merge_wav_files, split_audio_by_duration,
-    create_silence, format_duration
+from novelcast.llm_review import review_unknown
+from novelcast.novel_reader import Chapter, read_novel, split_chapters
+from novelcast.script_qa import (
+    alignment,
+    dedupe_adjacent,
+    format_gap,
+    repair_attributions,
+    repair_narration,
+    repair_tail,
 )
-from modules.coverage_analyzer import analyze_coverage, print_coverage_report, print_summary
+from novelcast.tts_generator import generate_tts_batch
+from novelcast.voice_assigner import assign_voices
 
 
 @dataclass
@@ -120,7 +130,7 @@ async def split_chapter(
     """
     start_time = time.time()
     start_str = time.strftime("%H:%M:%S.") + f"{start_time % 1:.3f}"[2:]  # 毫秒级
-    print(f"  📝 [{start_str}] 章节 {chapter.number:03d}: {chapter.title} ({len(chapter.text)}字) 开始处理")
+    log.info(f"  📝 [{start_str}] 章节 {chapter.number:03d}: {chapter.title} ({len(chapter.text)}字) 开始处理")
 
     try:
         lines = await split_dialogues_async(chapter.text, chapter.title, book_name, character_map=character_map)
@@ -139,7 +149,7 @@ async def split_chapter(
         # 先去掉 LLM 连续重复输出的同一句，再做逐字对齐
         lines, dup_removed = dedupe_adjacent(lines)
         if dup_removed:
-            print(f"  🧹 去重: 删除连续重复 {dup_removed} 行")
+            log.info(f"  🧹 去重: 删除连续重复 {dup_removed} 行")
 
         # 逐字对齐：定位丢字；结尾被整段截断的补成旁白
         report = alignment(chapter.text, lines)
@@ -148,17 +158,17 @@ async def split_chapter(
             attr_added = repair_attributions(chapter.text, lines)
             nar_added = repair_narration(chapter.text, lines)
             if tail_added or attr_added or nar_added:
-                print(f"  🩹 修复: 补结尾 {tail_added} 字、补回 {attr_added} 处「XX说/问」、{nar_added} 处短旁白")
+                log.info(f"  🩹 修复: 补结尾 {tail_added} 字、补回 {attr_added} 处「XX说/问」、{nar_added} 处短旁白")
                 report = alignment(chapter.text, lines)
         if report["gaps"] or report["extra_chars"]:
-            print(
+            log.info(
                 f"  🔍 对齐检查: 内容覆盖 {report['content_coverage']:.2%}，"
                 f"缺失 {report['missing_chars']} 字 / {report['missing_spans']} 处，"
                 f"多出 {report['extra_chars']} 字 / {report['extra_spans']} 处"
                 f"（另有 {report['punctuation_chars']} 个标点被合并，不影响朗读）"
             )
             for gap in report["gaps"][:3]:
-                print(f"     缺字 {format_gap(gap)}")
+                log.info(f"     缺字 {format_gap(gap)}")
 
         # 默认用 LLM 复核「未知」说话人：只改 character，不动文字
         if character_map and config.config.get("review_unknown", True):
@@ -170,18 +180,18 @@ async def split_chapter(
                     for idx, _old, new in changes:
                         lines[idx].character = new
                     if changes:
-                        print(f"  🤖 LLM 复核修正 {len(changes)} 处「未知」说话人")
+                        log.info(f"  🤖 LLM 复核修正 {len(changes)} 处「未知」说话人")
                 except Exception as exc:  # noqa: BLE001
-                    print(f"  ⚠️ LLM 复核跳过: {exc}")
+                    log.info(f"  ⚠️ LLM 复核跳过: {exc}")
 
         # 覆盖率按“实际文字”算：引号等标点在剧本里本来就会被合并
         original_len = len(chapter.text)
-        split_len = sum(len(line.text) for line in lines)
+        sum(len(line.text) for line in lines)
         coverage = report["content_coverage"] if original_len > 0 else 0
 
         elapsed = time.time() - start_time
         end_str = time.strftime("%H:%M:%S.") + f"{time.time() % 1:.3f}"[2:]  # 毫秒级
-        print(f"  ✅ [{end_str}] 章节 {chapter.number:03d} 分割完成: {len(lines)}段, 覆盖率{coverage:.1%} (耗时{elapsed:.1f}秒)")
+        log.info(f"  ✅ [{end_str}] 章节 {chapter.number:03d} 分割完成: {len(lines)}段, 覆盖率{coverage:.1%} (耗时{elapsed:.1f}秒)")
 
         return ChapterSplitResult(
             chapter=chapter,
@@ -193,7 +203,7 @@ async def split_chapter(
         )
 
     except Exception as e:
-        print(f"    ❌ 分割失败: {e}")
+        log.info(f"    ❌ 分割失败: {e}")
         return ChapterSplitResult(
             chapter=chapter,
             lines=[],
@@ -223,17 +233,17 @@ def _load_script_result(chapter: Chapter, book_name: str, config: ConfigManager)
             if item.get("text")
         ]
     except Exception as exc:  # noqa: BLE001
-        print(f"    ⚠️ 读取已有剧本失败（{exc}），重新分割")
+        log.info(f"    ⚠️ 读取已有剧本失败（{exc}），重新分割")
         return None
     if not lines:
         return None
     # 半章剧本（--first-chars / --first-paragraphs）或旧版残缺剧本不能当整章成品复用
     if data.get("partial") and not getattr(chapter, "partial", False):
-        print(f"    ⚠️ 已有剧本是「前若干字」的试跑结果（partial=true），重新分割")
+        log.info("    ⚠️ 已有剧本是「前若干字」的试跑结果（partial=true），重新分割")
         return None
     report = alignment(chapter.text, lines)
     if report["content_coverage"] < 0.98:
-        print(
+        log.info(
             f"    ⚠️ 已有剧本只覆盖本章 {report['content_coverage']:.1%}"
             f"（{len(chapter.text)} 字 vs 剧本 {report['output_chars']} 字），重新分割"
         )
@@ -323,9 +333,9 @@ async def split_all_chapters(
     Returns:
         (成功结果列表, 失败结果列表)
     """
-    print(f"\n{'='*60}")
-    print(f"  阶段1: LLM分割所有章节")
-    print(f"{'='*60}")
+    log.info(f"\n{'='*60}")
+    log.info("  阶段1: LLM分割所有章节")
+    log.info(f"{'='*60}")
 
     start_time = time.time()
     results = []
@@ -334,11 +344,11 @@ async def split_all_chapters(
     for chapter in chapters:
         cached = _load_script_result(chapter, book_name, config) if resume else None
         if cached is not None:
-            print(f"  ⏭ 章节 {chapter.number:03d}: {chapter.title} 已有剧本，直接复用（{len(cached.lines)}段）")
+            log.info(f"  ⏭ 章节 {chapter.number:03d}: {chapter.title} 已有剧本，直接复用（{len(cached.lines)}段）")
             results.append(cached)
             continue
         if offline:
-            print(f"  ⏭ 离线模式：章节 {chapter.number:03d} 没有可用剧本，跳过")
+            log.info(f"  ⏭ 离线模式：章节 {chapter.number:03d} 没有可用剧本，跳过")
             results.append(ChapterSplitResult(
                 chapter=chapter, lines=[], coverage=0.0, success=False,
                 error="离线模式：缺少剧本",
@@ -347,7 +357,7 @@ async def split_all_chapters(
         result = await split_chapter(chapter, book_name, config, character_map)
         if result.success:
             script_file = _save_script_result(result, book_name, config)
-            print(f"    💾 剧本已保存: {script_file.name}")
+            log.info(f"    💾 剧本已保存: {script_file.name}")
         results.append(result)
 
     elapsed = time.time() - start_time
@@ -356,15 +366,15 @@ async def split_all_chapters(
     success_results = [r for r in results if r.success]
     failed_results = [r for r in results if not r.success]
 
-    print(f"\n  📊 分割统计:")
-    print(f"     成功: {len(success_results)}/{len(chapters)} 章")
-    print(f"     失败: {len(failed_results)}/{len(chapters)} 章")
-    print(f"     耗时: {elapsed:.1f}秒")
+    log.info("\n  📊 分割统计:")
+    log.info(f"     成功: {len(success_results)}/{len(chapters)} 章")
+    log.info(f"     失败: {len(failed_results)}/{len(chapters)} 章")
+    log.info(f"     耗时: {elapsed:.1f}秒")
 
     if failed_results:
-        print(f"\n  ⚠️ 失败章节:")
+        log.info("\n  ⚠️ 失败章节:")
         for r in failed_results:
-            print(f"     - {r.chapter.title}: {r.error}")
+            log.info(f"     - {r.chapter.title}: {r.error}")
 
     return success_results, failed_results
 
@@ -397,21 +407,21 @@ async def generate_chapter_audio(
     chapter = result.chapter
     lines = result.lines
 
-    print(f"\n  🎤 章节 {chapter.number:03d}: {chapter.title}")
+    log.info(f"\n  🎤 章节 {chapter.number:03d}: {chapter.title}")
 
     # 检查是否已存在
     output_dir = config.get_output_dir(book_name)
     existing_files = list(output_dir.glob(f"{chapter.number:03d}_*.wav"))
 
     if skip_existing and existing_files:
-        print(f"    ⏭ 已存在（{len(existing_files)}个文件），跳过")
+        log.info(f"    ⏭ 已存在（{len(existing_files)}个文件），跳过")
         return [str(f) for f in existing_files]
 
     # 分配音色：优先使用全书统一的 cast.json
     if cast:
         unknown = apply_cast(lines, cast)
         if unknown:
-            print(f"    ⚠️ 角色表外角色（暂用旁白音色）: {', '.join(unknown[:8])}")
+            log.info(f"    ⚠️ 角色表外角色（暂用旁白音色）: {', '.join(unknown[:8])}")
     else:
         voice_map = assign_voices(lines)
         for line in lines:
@@ -420,9 +430,9 @@ async def generate_chapter_audio(
     # 本地 TTS（IndexTTS-2 / edge-tts）：逐行合成后直接拼成整章
     provider_name = config.config.get("tts", {}).get("provider", "mimoai")
     if provider_name in ("indextts2", "edge"):
-        from modules.local_tts import concat_segments, synthesize_lines
+        from novelcast.local_tts import concat_segments, synthesize_lines
 
-        print(f"    🎧 本地 TTS（{provider_name}），逐行合成中…")
+        log.info(f"    🎧 本地 TTS（{provider_name}），逐行合成中…")
         temp_dir = config.get_temp_dir(book_name, chapter.number)
         tts_cfg = config.config.get("tts", {})
         units = []
@@ -437,9 +447,9 @@ async def generate_chapter_audio(
         )
         segment_files = [done[i] for i in sorted(done)]
         characters = [units[i]["character"] for i in sorted(done)] if units else None
-        print(f"    ✅ 本地合成 {len(segment_files)}/{len(lines)} 段")
+        log.info(f"    ✅ 本地合成 {len(segment_files)}/{len(lines)} 段")
         if not segment_files:
-            print("    ❌ 没有生成任何音频")
+            log.info("    ❌ 没有生成任何音频")
             return None
         output_path = str(output_dir / f"{chapter.number:03d}_{chapter.title}.wav")
         stats = {}
@@ -455,8 +465,8 @@ async def generate_chapter_audio(
         duration = stats.get("duration") or get_wav_duration(output_path)
         total_chars = sum(len(l.text) for l in lines)
         rate = total_chars / duration * 60 if duration else 0
-        print(f"      ✅ {Path(output_path).name} ({format_duration(duration)})")
-        print(
+        log.info(f"      ✅ {Path(output_path).name} ({format_duration(duration)})")
+        log.info(
             f"      📊 自检: {rate:.0f} 字/分 · 最长段 {stats.get('max_segment', 0):.1f}s"
             f" · {stats.get('lufs', 0):.1f} LUFS · 峰值 {stats.get('peak', 0):.2f}"
         )
@@ -466,7 +476,7 @@ async def generate_chapter_audio(
         if stats.get("max_segment", 0) > 30:
             issues.append(f"有超长分段（{stats['max_segment']:.0f}s）")
         if issues:
-            print("      ⚠️ " + "；".join(issues) + "，建议抽听")
+            log.info("      ⚠️ " + "；".join(issues) + "，建议抽听")
 
         script_data = {
             "chapter": chapter.title,
@@ -484,7 +494,7 @@ async def generate_chapter_audio(
         if not keep_segments:
             import shutil
             shutil.rmtree(temp_dir, ignore_errors=True)
-            print(f"      🧹 已清理分段缓存（{temp_dir.name}）")
+            log.info(f"      🧹 已清理分段缓存（{temp_dir.name}）")
         return [output_path]
 
     # 准备TTS任务
@@ -514,10 +524,10 @@ async def generate_chapter_audio(
         else:
             error_msg = result.get("error", "未知错误")
             tts_failed_indices.append(result["idx"] + 1)  # 转为1-based
-            print(f"      ❌ 片段 {result['idx']+1} 生成失败: {error_msg}")
+            log.info(f"      ❌ 片段 {result['idx']+1} 生成失败: {error_msg}")
 
     success_count = sum(1 for r in tts_results if r["success"])
-    print(f"    ✅ TTS生成: {success_count}/{len(tasks)}段成功")
+    log.info(f"    ✅ TTS生成: {success_count}/{len(tasks)}段成功")
 
     # 收集成功的音频文件
     segment_files = [r["file"] for r in tts_results if r["success"]]
@@ -526,7 +536,7 @@ async def generate_chapter_audio(
     # 片段完整性校验：检查是否有缺失的片段
     expected_count = sum(1 for line in lines if line.text.strip())
     if len(segment_files) != expected_count:
-        print(f"    ⚠️ 片段数量不匹配: 期望{expected_count}，实际{len(segment_files)}")
+        log.info(f"    ⚠️ 片段数量不匹配: 期望{expected_count}，实际{len(segment_files)}")
 
         # 找出缺失的片段索引
         generated_indices = set()
@@ -548,18 +558,18 @@ async def generate_chapter_audio(
                 missing_details.append(f"{j+1}[{line.character}]: {line.text[:30]}...")
 
         if missing_indices:
-            print(f"    ❌ 缺失片段({len(missing_indices)}个): {missing_indices[:20]}{'...' if len(missing_indices) > 20 else ''}")
+            log.info(f"    ❌ 缺失片段({len(missing_indices)}个): {missing_indices[:20]}{'...' if len(missing_indices) > 20 else ''}")
             for detail in missing_details[:10]:
-                print(f"       {detail}")
+                log.info(f"       {detail}")
     else:
-        print(f"    ✅ 片段完整性校验通过: {len(segment_files)}/{expected_count}")
+        log.info(f"    ✅ 片段完整性校验通过: {len(segment_files)}/{expected_count}")
 
     # 报告TTS失败的片段汇总
     if tts_failed_indices:
-        print(f"    ⚠️ TTS生成失败的片段({len(tts_failed_indices)}个): {tts_failed_indices[:20]}{'...' if len(tts_failed_indices) > 20 else ''}")
+        log.info(f"    ⚠️ TTS生成失败的片段({len(tts_failed_indices)}个): {tts_failed_indices[:20]}{'...' if len(tts_failed_indices) > 20 else ''}")
 
     if not segment_files:
-        print(f"    ❌ 没有生成任何音频")
+        log.info("    ❌ 没有生成任何音频")
         return None
 
     # 合并音频
@@ -578,10 +588,10 @@ async def generate_chapter_audio(
 
         if merge_wav_files(batch, output_path, silence_sec):
             duration = get_wav_duration(output_path)
-            print(f"      ✅ {output_filename} ({format_duration(duration)})")
+            log.info(f"      ✅ {output_filename} ({format_duration(duration)})")
             output_files.append(output_path)
         else:
-            print(f"      ❌ {output_filename} 合并失败")
+            log.info(f"      ❌ {output_filename} 合并失败")
 
     # 保存脚本
     script_file = output_dir / f"{chapter.number:03d}_{chapter.title}_script.json"
@@ -652,9 +662,9 @@ def _generate_readable_text_file(script_data: dict, output_path: Path):
     try:
         with open(output_path, 'w', encoding='utf-8') as f:
             f.write('\n'.join(lines))
-        print(f"      📄 可读文本: {output_path.name}")
+        log.info(f"      📄 可读文本: {output_path.name}")
     except Exception as e:
-        print(f"      ⚠️ 生成可读文本失败: {e}")
+        log.info(f"      ⚠️ 生成可读文本失败: {e}")
 
 
 async def generate_all_audio(
@@ -678,9 +688,9 @@ async def generate_all_audio(
     Returns:
         生成的音频文件路径列表
     """
-    print(f"\n{'='*60}")
-    print(f"  阶段2: 生成音频")
-    print(f"{'='*60}")
+    log.info(f"\n{'='*60}")
+    log.info("  阶段2: 生成音频")
+    log.info(f"{'='*60}")
 
     start_time = time.time()
     all_output_files = []
@@ -693,9 +703,9 @@ async def generate_all_audio(
 
     elapsed = time.time() - start_time
 
-    print(f"\n  📊 音频统计:")
-    print(f"     生成文件: {len(all_output_files)} 个")
-    print(f"     耗时: {elapsed:.1f}秒")
+    log.info("\n  📊 音频统计:")
+    log.info(f"     生成文件: {len(all_output_files)} 个")
+    log.info(f"     耗时: {elapsed:.1f}秒")
 
     return all_output_files
 
@@ -761,11 +771,11 @@ def _filter_chapters_content(
 
         # 打印过滤信息
         if first_paragraphs or first_chars:
-            print(f"  📝 章节 {chapter.number:03d}: {chapter.title}")
+            log.info(f"  📝 章节 {chapter.number:03d}: {chapter.title}")
             if first_paragraphs:
-                print(f"     段落: {original_paragraph_count} → {len(paragraphs)}")
+                log.info(f"     段落: {original_paragraph_count} → {len(paragraphs)}")
             if first_chars:
-                print(f"     字符: {len(chapter.text)} → {len(filtered_text)}")
+                log.info(f"     字符: {len(chapter.text)} → {len(filtered_text)}")
 
     return filtered_chapters
 
@@ -776,6 +786,9 @@ def _filter_chapters_content(
 
 async def main():
     """主函数"""
+    from novelcast.log import setup as _setup_logging
+
+    _setup_logging()
     args = parse_args()
 
     # 加载配置
@@ -791,28 +804,28 @@ async def main():
 
     # 测试API连接
     if args.test:
-        print("🔍 测试API连接...")
+        log.info("🔍 测试API连接...")
 
         # 测试LLM API
-        print("\n📝 测试LLM API...")
+        log.info("\n📝 测试LLM API...")
         try:
-            from modules.dialogue_splitter import get_llm_client
+            from novelcast.dialogue_splitter import get_llm_client
             llm_client = get_llm_client()
-            response = llm_client.chat.completions.create(
+            llm_client.chat.completions.create(
                 model=config.llm_api.model,
                 messages=[{"role": "user", "content": "你好"}],
                 max_tokens=10
             )
-            print(f"  ✅ LLM API连接成功 (模型: {config.llm_api.model})")
+            log.info(f"  ✅ LLM API连接成功 (模型: {config.llm_api.model})")
         except Exception as e:
-            print(f"  ❌ LLM API连接失败: {e}")
+            log.info(f"  ❌ LLM API连接失败: {e}")
 
         # 测试TTS API
-        print("\n🎤 测试TTS API...")
+        log.info("\n🎤 测试TTS API...")
         try:
-            from modules.tts_generator import get_tts_client
+            from novelcast.tts_generator import get_tts_client
             tts_client = get_tts_client()
-            response = tts_client.chat.completions.create(
+            tts_client.chat.completions.create(
                 model=config.tts_api.model,
                 messages=[
                     {"role": "user", "content": "用平静的语气朗读"},
@@ -820,47 +833,47 @@ async def main():
                 ],
                 audio={"format": "wav", "voice": "冰糖"}
             )
-            print(f"  ✅ TTS API连接成功 (模型: {config.tts_api.model})")
+            log.info(f"  ✅ TTS API连接成功 (模型: {config.tts_api.model})")
         except Exception as e:
-            print(f"  ❌ TTS API连接失败: {e}")
+            log.info(f"  ❌ TTS API连接失败: {e}")
 
         return
 
     # 读取小说
-    print("\n📖 读取小说...")
+    log.info("\n📖 读取小说...")
     try:
         book_name, content = read_novel(args.novel)
     except Exception as e:
-        print(f"❌ 读取小说失败: {e}")
+        log.info(f"❌ 读取小说失败: {e}")
         return
 
     # 清空全局人物映射表（开始新书时重置）
     clear_global_character_map()
-    print(f"  🔄 已清空全局人物映射表")
+    log.info("  🔄 已清空全局人物映射表")
 
     # 输出目录：默认保留，支持断点续跑；--fresh 才清空
     output_dir = config.get_output_dir(book_name)
     if args.fresh:
         if output_dir.exists():
             shutil.rmtree(output_dir)
-            print(f"  🗑️ 已清空输出目录: {output_dir}")
-        from modules.dialogue_splitter import get_llm_cache
+            log.info(f"  🗑️ 已清空输出目录: {output_dir}")
+        from novelcast.dialogue_splitter import get_llm_cache
         removed = get_llm_cache(book_name).clear()
-        print(f"  🗑️ 已清空 LLM 缓存: {removed} 个文件")
+        log.info(f"  🗑️ 已清空 LLM 缓存: {removed} 个文件")
         llm_raw_dir = config.get_llm_raw_dir(book_name)
         if llm_raw_dir.exists():
             shutil.rmtree(llm_raw_dir)
-            print(f"  🗑️ 已清空LLM原始响应目录: {llm_raw_dir}")
+            log.info(f"  🗑️ 已清空LLM原始响应目录: {llm_raw_dir}")
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # 分割章节
-    print("\n📑 分割章节...")
+    log.info("\n📑 分割章节...")
     chapters = split_chapters(content)
 
     # 限制章节数
     if args.chapters > 0:
         chapters = chapters[:args.chapters]
-        print(f"  限制处理前 {args.chapters} 章")
+        log.info(f"  限制处理前 {args.chapters} 章")
 
     # 部分处理选项：限制每个章节的段落数或字符数
     if args.first_paragraphs or args.first_chars:
@@ -869,41 +882,41 @@ async def main():
     # ============================================================
     # 交互式选择：让用户选择要处理的章节
     # ============================================================
-    from modules.dialogue_splitter import _split_text_chunks
+    from novelcast.dialogue_splitter import _split_text_chunks
 
-    print(f"\n📋 章节列表:")
+    log.info("\n📋 章节列表:")
     for i, chapter in enumerate(chapters, 1):
-        print(f"  {i}. {chapter.title} ({len(chapter.text)}字)")
+        log.info(f"  {i}. {chapter.title} ({len(chapter.text)}字)")
 
     if len(chapters) == 1 and chapters[0].title == "全文":
         # 没有章节标题，让用户输入块数
         chunk_size = config.generation.chunk_size
         all_chunks = _split_text_chunks(chapters[0].text, chunk_size)
-        print(f"\n  检测到没有章节标题")
-        print(f"  按{chunk_size}字分块，共{len(all_chunks)}块")
-        print(f"  请输入要处理的块数（例如：2，直接回车处理全部）:")
+        log.info("\n  检测到没有章节标题")
+        log.info(f"  按{chunk_size}字分块，共{len(all_chunks)}块")
+        log.info("  请输入要处理的块数（例如：2，直接回车处理全部）:")
 
         user_input = input("  > ").strip()
         if user_input:
             try:
                 num_chunks = int(user_input)
                 if num_chunks < 1:
-                    print("❌ 块数必须大于0")
+                    log.info("❌ 块数必须大于0")
                     return
                 # 取前N块
                 selected_chunks = all_chunks[:num_chunks]
-                print(f"\n  ✅ 选择处理前{num_chunks}块")
+                log.info(f"\n  ✅ 选择处理前{num_chunks}块")
                 for i, chunk in enumerate(selected_chunks, 1):
-                    print(f"    块{i}: {len(chunk)}字")
+                    log.info(f"    块{i}: {len(chunk)}字")
             except ValueError:
-                print("❌ 请输入有效的数字")
+                log.info("❌ 请输入有效的数字")
                 return
         else:
             selected_chunks = all_chunks
-            print(f"\n  ✅ 处理全部{len(selected_chunks)}块")
+            log.info(f"\n  ✅ 处理全部{len(selected_chunks)}块")
 
         # 每块作为独立章节处理
-        from modules.novel_reader import Chapter
+        from novelcast.novel_reader import Chapter
         chapters = []
         for i, chunk in enumerate(selected_chunks, 1):
             chapters.append(Chapter(
@@ -913,8 +926,8 @@ async def main():
             ))
     else:
         # 有章节，让用户选择章节
-        print(f"\n  检测到{len(chapters)}个章节")
-        print(f"  请输入要处理的章节号（例如：2,3,4,6，直接回车处理全部）:")
+        log.info(f"\n  检测到{len(chapters)}个章节")
+        log.info("  请输入要处理的章节号（例如：2,3,4,6，直接回车处理全部）:")
 
         user_input = input("  > ").strip()
         if user_input:
@@ -923,18 +936,18 @@ async def main():
                 # 验证章节号
                 for idx in chapter_indices:
                     if idx < 1 or idx > len(chapters):
-                        print(f"❌ 章节号 {idx} 无效，有效范围: 1-{len(chapters)}")
+                        log.info(f"❌ 章节号 {idx} 无效，有效范围: 1-{len(chapters)}")
                         return
                 # 筛选章节
                 chapters = [chapters[i-1] for i in chapter_indices]
-                print(f"\n  ✅ 选择处理{len(chapters)}个章节")
+                log.info(f"\n  ✅ 选择处理{len(chapters)}个章节")
                 for i, chapter in enumerate(chapters, 1):
-                    print(f"    {i}. {chapter.title} ({len(chapter.text)}字)")
+                    log.info(f"    {i}. {chapter.title} ({len(chapter.text)}字)")
             except ValueError:
-                print("❌ 请输入有效的章节号（用逗号分隔）")
+                log.info("❌ 请输入有效的章节号（用逗号分隔）")
                 return
         else:
-            print(f"\n  ✅ 处理全部{len(chapters)}个章节")
+            log.info(f"\n  ✅ 处理全部{len(chapters)}个章节")
 
     # ============================================================
     # 阶段0: 全书角色表（后续标注的枚举约束）
@@ -942,22 +955,22 @@ async def main():
     roster_file = output_dir / "characters.json"
     roster = None if args.rebuild_roster else load_roster(roster_file)
     if roster:
-        print(f"\n🎭 复用角色表: {len(roster['characters'])} 个角色（{roster_file.name}）")
+        log.info(f"\n🎭 复用角色表: {len(roster['characters'])} 个角色（{roster_file.name}）")
     elif args.offline:
-        print(f"\n{'='*60}")
-        print(f"  阶段0: 离线模式，从已有剧本汇总角色")
-        print(f"{'='*60}")
+        log.info(f"\n{'='*60}")
+        log.info("  阶段0: 离线模式，从已有剧本汇总角色")
+        log.info(f"{'='*60}")
         roster = _roster_from_scripts(output_dir)
         save_roster(roster, roster_file)
-        print(f"  💾 角色表已保存: {roster_file}（{len(roster['characters'])} 个角色）")
+        log.info(f"  💾 角色表已保存: {roster_file}（{len(roster['characters'])} 个角色）")
     else:
-        print(f"\n{'='*60}")
-        print(f"  阶段0: 全书角色抽取")
-        print(f"{'='*60}")
+        log.info(f"\n{'='*60}")
+        log.info("  阶段0: 全书角色抽取")
+        log.info(f"{'='*60}")
         client = get_async_llm_client()
         roster = await build_roster_async(chapters, book_name, client, config)
         save_roster(roster, roster_file)
-        print(f"  💾 角色表已保存: {roster_file}")
+        log.info(f"  💾 角色表已保存: {roster_file}")
     character_map = roster_to_prompt_map(roster)
 
     # ============================================================
@@ -970,11 +983,11 @@ async def main():
 
     # 检查是否有失败的章节
     if failed_results:
-        print(f"\n⚠️ 有 {len(failed_results)} 个章节分割失败，是否继续生成音频？")
-        print(f"   失败章节将被跳过。")
+        log.info(f"\n⚠️ 有 {len(failed_results)} 个章节分割失败，是否继续生成音频？")
+        log.info("   失败章节将被跳过。")
 
     if not success_results:
-        print(f"\n❌ 没有成功分割的章节，无法生成音频")
+        log.info("\n❌ 没有成功分割的章节，无法生成音频")
         return
 
     # 全书音色表（阶段1 可能带出角色表之外的角色，一并纳入）
@@ -983,19 +996,19 @@ async def main():
     cast_file = output_dir / "cast.json"
     cast = None if args.rebuild_cast else load_cast(cast_file)
     if cast:
-        print(f"\n🎭 复用已有音色表: {cast_file}")
+        log.info(f"\n🎭 复用已有音色表: {cast_file}")
     else:
         cast = build_cast(roster, config, extra_characters=dict(counts))
         save_cast(cast, cast_file)
-        print(f"\n💾 音色表已保存: {cast_file}")
+        log.info(f"\n💾 音色表已保存: {cast_file}")
     print_cast(cast)
 
     # ============================================================
     # 覆盖率分析
     # ============================================================
-    print(f"\n{'='*60}")
-    print(f"  覆盖率详细分析")
-    print(f"{'='*60}")
+    log.info(f"\n{'='*60}")
+    log.info("  覆盖率详细分析")
+    log.info(f"{'='*60}")
 
     coverage_reports = []
     for result in success_results:
@@ -1012,7 +1025,7 @@ async def main():
 
     # 如果只分割不生成
     if args.split_only:
-        print(f"\n✅ 分割完成（--split-only 模式）")
+        log.info("\n✅ 分割完成（--split-only 模式）")
         return
 
     # ============================================================
@@ -1029,13 +1042,13 @@ async def main():
     )
 
     # 完成
-    print(f"\n{'='*60}")
-    print(f"  生成完成!")
-    print(f"{'='*60}")
-    print(f"  成功章节: {len(success_results)}/{len(chapters)}")
-    print(f"  音频文件: {len(all_output_files)} 个")
-    print(f"  输出目录: {output_dir}")
-    print(f"\n🎉 有声书生成完成！")
+    log.info(f"\n{'='*60}")
+    log.info("  生成完成!")
+    log.info(f"{'='*60}")
+    log.info(f"  成功章节: {len(success_results)}/{len(chapters)}")
+    log.info(f"  音频文件: {len(all_output_files)} 个")
+    log.info(f"  输出目录: {output_dir}")
+    log.info("\n🎉 有声书生成完成！")
 
 
 if __name__ == "__main__":

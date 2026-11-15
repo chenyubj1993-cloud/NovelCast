@@ -10,11 +10,12 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import time
 from collections import Counter
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional
+
+from novelcast.log import log
 
 CAST_VERSION = 1
 
@@ -219,7 +220,7 @@ def build_cast(
 
     dup = [v for v, n in usage.items() if n > 1]
     if dup:
-        print(f"  ⚠️ 音色数量不足，以下音色被复用: {', '.join(sorted(dup))}")
+        log.info(f"  ⚠️ 音色数量不足，以下音色被复用: {', '.join(sorted(dup))}")
     return cast
 
 
@@ -317,12 +318,12 @@ def load_cast(path: Path) -> Optional[dict]:
 
 def print_cast(cast: dict, max_rows: int = 60) -> None:
     voices = (cast or {}).get("voices", {})
-    print(f"  🎭 全书音色分配（{len(voices)} 个角色）:")
+    log.info(f"  🎭 全书音色分配（{len(voices)} 个角色）:")
     for i, (name, voice) in enumerate(voices.items()):
         if i >= max_rows:
-            print(f"     … 其余 {len(voices) - max_rows} 个角色略")
+            log.info(f"     … 其余 {len(voices) - max_rows} 个角色略")
             break
         info = (cast.get("characters") or {}).get(name, {})
         gender = {"male": "男", "female": "女"}.get(info.get("gender", ""), "")
         tag = f" [{gender}]" if gender else ""
-        print(f"     {name}{tag} -> {voice}")
+        log.info(f"     {name}{tag} -> {voice}")

@@ -3,12 +3,13 @@
 负责加载、保存和管理所有配置项
 """
 
-import os
+import copy
 import json
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Any, Optional
-from dataclasses import dataclass, field, asdict
+from typing import Optional
 
+from novelcast.log import log
 
 # ============================================================
 # 项目路径配置
@@ -73,9 +74,9 @@ DEFAULT_CONFIG = {
         "sample_rate": 24000,
         "channels": 1,
         "sample_width": 2,
-        "indextts_model_dir": "models/IndexTTS-2",
+        "indextts_model_dir": "models/IndexTTS-2.5",
         "use_fp16": True,
-        "model_version": "2",  # 2 | 2.5（2.5 支持 <字|拼音> 发音标注与 duration_factor 变速）
+        "model_version": "2.5",  # 2 | 2.5（2.5 支持 <字|拼音> 发音标注与 duration_factor 变速）
         "duration_factor": 1.0,  # 仅 2.5：0.5~2.0，越小越快
         "lang": "zh",  # 仅 2.5：zh | en | ja | es | ar
         "use_qwen_emo": None,  # 仅 2.5：None 自动 / False 关闭文本情绪
@@ -214,9 +215,9 @@ class TtsConfig:
     sample_rate: int = 24000
     channels: int = 1
     sample_width: int = 2
-    indextts_model_dir: str = "models/IndexTTS-2"
+    indextts_model_dir: str = "models/IndexTTS-2.5"
     use_fp16: bool = True
-    model_version: str = "2"
+    model_version: str = "2.5"
     duration_factor: float = 1.0
     lang: str = "zh"
     use_qwen_emo: Optional[bool] = None
@@ -243,7 +244,11 @@ class ConfigManager:
             config_path = str(CONFIG_DIR / "settings.json")
 
         self.config_path = Path(config_path)
-        self.config = DEFAULT_CONFIG.copy()
+        # 必须深拷贝：浅拷贝会让所有实例共享 tts/llm_api 等嵌套 dict，
+        # 另一个 ConfigManager 重新加载 settings.json 时会把 CLI 覆盖改回去。
+        self.config = copy.deepcopy(DEFAULT_CONFIG)
+        # CLI -o / --output：显式指定输出目录时不再拼「书名_有声书」
+        self.output_override: Optional[Path] = None
 
         # 加载配置文件
         self._load_config()
@@ -264,13 +269,13 @@ class ConfigManager:
                     user_config = json.load(f)
                 # 深度合并配置
                 self._merge_config(self.config, user_config)
-                print(f"✅ 已加载配置: {self.config_path}")
+                log.info(f"✅ 已加载配置: {self.config_path}")
             except Exception as e:
-                print(f"⚠️ 配置文件加载失败，使用默认配置: {e}")
+                log.info(f"⚠️ 配置文件加载失败，使用默认配置: {e}")
         else:
             # 首次运行，保存默认配置
             self.save_config()
-            print(f"✅ 已创建默认配置: {self.config_path}")
+            log.info(f"✅ 已创建默认配置: {self.config_path}")
 
     def _merge_config(self, base: dict, override: dict):
         """深度合并配置"""
@@ -285,9 +290,19 @@ class ConfigManager:
         try:
             with open(self.config_path, 'w', encoding='utf-8') as f:
                 json.dump(self.config, f, ensure_ascii=False, indent=2)
-            print(f"✅ 配置已保存: {self.config_path}")
+            log.info(f"✅ 配置已保存: {self.config_path}")
         except Exception as e:
-            print(f"❌ 配置保存失败: {e}")
+            log.info(f"❌ 配置保存失败: {e}")
+
+    def apply_tts_overrides(self, **kwargs):
+        """命令行覆盖 TTS 配置，例如 --tts edge --speed 0.95。"""
+        tts = self.config.setdefault("tts", {})
+        for key, value in kwargs.items():
+            if value is None:
+                continue
+            tts[key] = value
+            if hasattr(self.tts, key):
+                setattr(self.tts, key, value)
 
     def get(self, key: str, default=None):
         """获取配置项（支持点号分隔的路径）"""
@@ -332,7 +347,7 @@ class ConfigManager:
 
     def get_output_dir(self, book_name: str) -> Path:
         """获取输出目录"""
-        output_dir = OUTPUT_DIR / f"{self._safe_filename(book_name)}_有声书"
+        output_dir = self.output_override or OUTPUT_DIR / f"{self._safe_filename(book_name)}_有声书"
         output_dir.mkdir(parents=True, exist_ok=True)
         return output_dir
 

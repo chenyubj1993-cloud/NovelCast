@@ -15,6 +15,8 @@ from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
+from novelcast.log import log
+
 TREE_API = "https://hf-mirror.com/api/datasets/{repo}/tree/main?recursive=true"
 RESOLVE = "https://hf-mirror.com/datasets/{repo}/resolve/main/{path}"
 
@@ -49,12 +51,12 @@ def main() -> int:
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
 
-    print(f"📋 拉取文件列表 {TREE_API.format(repo=args.repo)}")
+    log.info(f"📋 拉取文件列表 {TREE_API.format(repo=args.repo)}")
     with urllib.request.urlopen(TREE_API.format(repo=args.repo), timeout=120) as r:
         tree = json.load(r)
     wavs = [x["path"] for x in tree if x.get("type") == "file" and x["path"].endswith(".wav")]
     spk = Counter(p.split("/")[2] for p in wavs if p.count("/") >= 3)
-    print(f"   共 {len(wavs)} 个 wav，{len(spk)} 个说话人")
+    log.info(f"   共 {len(wavs)} 个 wav，{len(spk)} 个说话人")
 
     info_path = out / "spk-info.txt"
     if not info_path.exists():
@@ -67,7 +69,7 @@ def main() -> int:
             dst = out / rel
             if not (dst.exists() and dst.stat().st_size > 0):
                 todo.append(rel)
-    print(f"   待下载 {len(todo)} 个")
+    log.info(f"   待下载 {len(todo)} 个")
 
     done = 0
     failed = 0
@@ -79,10 +81,10 @@ def main() -> int:
             else:
                 failed += 1
             if (done + failed) % 50 == 0:
-                print(f"   … {done + failed}/{len(todo)}")
+                log.info(f"   … {done + failed}/{len(todo)}")
 
     total = sum(f.stat().st_size for f in out.rglob("*.wav"))
-    print(f"✅ 成功 {done}，失败 {failed}，共 {total/1e6:.1f} MB -> {out}")
+    log.info(f"✅ 成功 {done}，失败 {failed}，共 {total/1e6:.1f} MB -> {out}")
     return 0
 
 

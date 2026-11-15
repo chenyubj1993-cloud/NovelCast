@@ -3,7 +3,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from modules import tts_providers as tp
+from novelcast import tts_providers as tp
 
 
 def _provider(mode="text"):

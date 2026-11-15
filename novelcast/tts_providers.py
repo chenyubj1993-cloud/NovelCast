@@ -13,6 +13,8 @@ import os
 import sys
 import threading
 
+from novelcast.log import log
+
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
@@ -184,11 +186,11 @@ class IndexTTS2Provider:
             if self._tts is None:
                 is_v25 = self.version.startswith("2.5")
                 if is_v25:
-                    from indextts.infer_v2_5 import IndexTTS2
                     import indextts.infer_v2_5 as _iv
+                    from indextts.infer_v2_5 import IndexTTS2
                 else:
-                    from indextts.infer_v2 import IndexTTS2
                     import indextts.infer_v2 as _iv
+                    from indextts.infer_v2 import IndexTTS2
                 import soundfile as _sf
 
                 def _save_wav(path, wav, sampling_rate, **kwargs):
@@ -221,7 +223,7 @@ class IndexTTS2Provider:
                                 return text
 
                         _iv.JapaneseG2PProcessor = _JaPassthrough
-                        print("ℹ️ 未检测到 MeCab，日文 G2P 使用空实现（仅影响日文）")
+                        log.info("ℹ️ 未检测到 MeCab，日文 G2P 使用空实现（仅影响日文）")
                     init_kwargs = dict(
                         cfg_path=self.cfg_path,
                         model_dir=self.model_dir,
@@ -234,7 +236,7 @@ class IndexTTS2Provider:
                         self._tts = IndexTTS2(**init_kwargs)
                         self._emo_ok = bool(init_kwargs.get("use_qwen_emo"))
                     except Exception as exc:  # 显存不够等情况：退回不带文本情绪
-                        print(f"⚠️ IndexTTS-2.5 带情绪模型加载失败（{exc}），回退为纯参考音情绪")
+                        log.info(f"⚠️ IndexTTS-2.5 带情绪模型加载失败（{exc}），回退为纯参考音情绪")
                         init_kwargs.pop("use_qwen_emo", None)
                         self._tts = IndexTTS2(**init_kwargs)
                         self._emo_ok = False

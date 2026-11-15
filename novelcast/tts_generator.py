@@ -3,22 +3,20 @@ TTS生成模块
 负责调用TTS API生成语音
 """
 
-import os
-import re
-import time
-import base64
 import asyncio
-from pathlib import Path
-from typing import List, Dict, Optional, Tuple
-from dataclasses import dataclass
+import base64
+import re
+from typing import Dict, List, Optional, Tuple
+
+from novelcast.log import log
+
 try:  # 延迟依赖：--offline / --split-only 模式不需要安装 openai
-    from openai import OpenAI, AsyncOpenAI
+    from openai import AsyncOpenAI, OpenAI
 except ImportError:  # pragma: no cover
     OpenAI = AsyncOpenAI = None  # type: ignore
 
 from .config_manager import get_config
-from .dialogue_splitter import DialogueLine, RateLimiter, is_content_moderation_error
-
+from .dialogue_splitter import RateLimiter
 
 # 全局速率限制器
 _tts_rate_limiter: Optional[RateLimiter] = None
@@ -96,7 +94,7 @@ def _generate_speech_impl(client: OpenAI, text: str, voice: str, emotion: str) -
 
     # 检查文本长度
     if len(text) < config.tts.min_chars:
-        print(f"    ⚠️ TTS文本过短({len(text)}字)，跳过")
+        log.info(f"    ⚠️ TTS文本过短({len(text)}字)，跳过")
         return None
 
     if len(text) > config.tts.max_chars:
@@ -119,12 +117,12 @@ def _generate_speech_impl(client: OpenAI, text: str, voice: str, emotion: str) -
 
         # 检查响应
         if not response.choices or not response.choices[0].message.audio:
-            print(f"    ❌ TTS响应无音频数据")
+            log.info("    ❌ TTS响应无音频数据")
             return None
 
         audio_data = response.choices[0].message.audio.data
         if not audio_data:
-            print(f"    ❌ TTS音频数据为空")
+            log.info("    ❌ TTS音频数据为空")
             return None
 
         return base64.b64decode(audio_data)
@@ -135,15 +133,15 @@ def _generate_speech_impl(client: OpenAI, text: str, voice: str, emotion: str) -
         
         # 常见错误分类
         if "content" in error_msg.lower() and ("moderation" in error_msg.lower() or "filter" in error_msg.lower()):
-            print(f"    ❌ TTS内容审核拒绝: {error_msg[:100]}")
+            log.info(f"    ❌ TTS内容审核拒绝: {error_msg[:100]}")
         elif "rate" in error_msg.lower() or "limit" in error_msg.lower():
-            print(f"    ❌ TTS速率限制: {error_msg[:100]}")
+            log.info(f"    ❌ TTS速率限制: {error_msg[:100]}")
         elif "timeout" in error_msg.lower():
-            print(f"    ❌ TTS请求超时: {error_msg[:100]}")
+            log.info(f"    ❌ TTS请求超时: {error_msg[:100]}")
         elif "auth" in error_msg.lower() or "key" in error_msg.lower():
-            print(f"    ❌ TTS认证失败: {error_msg[:100]}")
+            log.info(f"    ❌ TTS认证失败: {error_msg[:100]}")
         else:
-            print(f"    ❌ TTS生成失败({error_type}): {error_msg[:100]}")
+            log.info(f"    ❌ TTS生成失败({error_type}): {error_msg[:100]}")
         
         return None
 
@@ -155,7 +153,7 @@ async def _generate_speech_impl_async(client: AsyncOpenAI, text: str, voice: str
 
     # 检查文本长度
     if len(text) < config.tts.min_chars:
-        print(f"    ⚠️ TTS文本过短({len(text)}字)，跳过")
+        log.info(f"    ⚠️ TTS文本过短({len(text)}字)，跳过")
         return None
 
     if len(text) > config.tts.max_chars:
@@ -181,12 +179,12 @@ async def _generate_speech_impl_async(client: AsyncOpenAI, text: str, voice: str
 
         # 检查响应
         if not response.choices or not response.choices[0].message.audio:
-            print(f"    ❌ TTS响应无音频数据")
+            log.info("    ❌ TTS响应无音频数据")
             return None
 
         audio_data = response.choices[0].message.audio.data
         if not audio_data:
-            print(f"    ❌ TTS音频数据为空")
+            log.info("    ❌ TTS音频数据为空")
             return None
 
         return base64.b64decode(audio_data)
@@ -197,15 +195,15 @@ async def _generate_speech_impl_async(client: AsyncOpenAI, text: str, voice: str
         
         # 常见错误分类
         if "content" in error_msg.lower() and ("moderation" in error_msg.lower() or "filter" in error_msg.lower()):
-            print(f"    ❌ TTS内容审核拒绝: {error_msg[:100]}")
+            log.info(f"    ❌ TTS内容审核拒绝: {error_msg[:100]}")
         elif "rate" in error_msg.lower() or "limit" in error_msg.lower():
-            print(f"    ❌ TTS速率限制: {error_msg[:100]}")
+            log.info(f"    ❌ TTS速率限制: {error_msg[:100]}")
         elif "timeout" in error_msg.lower():
-            print(f"    ❌ TTS请求超时: {error_msg[:100]}")
+            log.info(f"    ❌ TTS请求超时: {error_msg[:100]}")
         elif "auth" in error_msg.lower() or "key" in error_msg.lower():
-            print(f"    ❌ TTS认证失败: {error_msg[:100]}")
+            log.info(f"    ❌ TTS认证失败: {error_msg[:100]}")
         else:
-            print(f"    ❌ TTS生成失败({error_type}): {error_msg[:100]}")
+            log.info(f"    ❌ TTS生成失败({error_type}): {error_msg[:100]}")
         
         return None
 
@@ -279,7 +277,7 @@ async def _generate_speech_with_moderation_retry_async(
 
     # 文本太短，放弃
     if len(text) < min_chars:
-        print(f"  {'  ' * depth}⚠ TTS文本过短({len(text)}字<{min_chars})，跳过")
+        log.info(f"  {'  ' * depth}⚠ TTS文本过短({len(text)}字<{min_chars})，跳过")
         return None
 
     # 尝试生成
@@ -291,14 +289,14 @@ async def _generate_speech_with_moderation_retry_async(
 
     # 失败，尝试递归二分（使用同步调用）
     if depth >= max_depth:
-        print(f"  {'  ' * depth}⚠ TTS达到最大递归深度({max_depth})，放弃")
+        log.info(f"  {'  ' * depth}⚠ TTS达到最大递归深度({max_depth})，放弃")
         return None
 
-    print(f"  {'  ' * depth}⚠ TTS生成失败，对半拆分重试...")
+    log.info(f"  {'  ' * depth}⚠ TTS生成失败，对半拆分重试...")
 
     # 对半切分
     upper_half, lower_half = _split_text_for_moderation(text)
-    print(f"  {'  ' * depth}  拆分: {len(upper_half)}字 + {len(lower_half)}字")
+    log.info(f"  {'  ' * depth}  拆分: {len(upper_half)}字 + {len(lower_half)}字")
 
     # 递归时使用同步客户端，避免占用异步并发池
     sync_client = get_tts_client()
@@ -349,7 +347,7 @@ def _generate_speech_with_moderation_retry_sync(
 
     # 文本太短，放弃
     if len(text) < min_chars:
-        print(f"  {'  ' * depth}⚠ TTS文本过短({len(text)}字<{min_chars})，跳过")
+        log.info(f"  {'  ' * depth}⚠ TTS文本过短({len(text)}字<{min_chars})，跳过")
         return None
 
     # 尝试生成（同步调用）
@@ -361,14 +359,14 @@ def _generate_speech_with_moderation_retry_sync(
 
     # 失败，尝试递归二分
     if depth >= max_depth:
-        print(f"  {'  ' * depth}⚠ TTS达到最大递归深度({max_depth})，放弃")
+        log.info(f"  {'  ' * depth}⚠ TTS达到最大递归深度({max_depth})，放弃")
         return None
 
-    print(f"  {'  ' * depth}⚠ TTS生成失败，对半拆分重试...")
+    log.info(f"  {'  ' * depth}⚠ TTS生成失败，对半拆分重试...")
 
     # 对半切分
     upper_half, lower_half = _split_text_for_moderation(text)
-    print(f"  {'  ' * depth}  拆分: {len(upper_half)}字 + {len(lower_half)}字")
+    log.info(f"  {'  ' * depth}  拆分: {len(upper_half)}字 + {len(lower_half)}字")
 
     # 顺序生成两半（同步调用）
     upper_audio = _generate_speech_with_moderation_retry_sync(
@@ -397,8 +395,8 @@ def _generate_speech_with_moderation_retry_sync(
 
 def create_silence(duration_sec: float, sample_rate: int = 24000, channels: int = 1, sample_width: int = 2) -> bytes:
     """创建静音音频"""
-    import wave
     import io
+    import wave
     num_samples = int(sample_rate * duration_sec)
     buf = io.BytesIO()
     with wave.open(buf, 'wb') as wf:
@@ -440,7 +438,7 @@ async def _generate_long_text_async(client: AsyncOpenAI, text: str, voice: str, 
     all_audio = []
     for i, result in enumerate(results):
         if isinstance(result, Exception):
-            print(f"    ❌ 子块 {i} 生成失败: {result}")
+            log.info(f"    ❌ 子块 {i} 生成失败: {result}")
             return None
         if result is None:
             return None
@@ -473,8 +471,8 @@ def _split_for_tts(text: str, max_chars: int) -> List[str]:
 
 def _concat_wav_files(audio_list: List[bytes]) -> bytes:
     """合并多个WAV文件"""
-    import wave
     import io
+    import wave
 
     if not audio_list:
         return b""
@@ -561,5 +559,5 @@ def save_wav(audio_bytes: bytes, output_path: str) -> bool:
             f.write(audio_bytes)
         return True
     except Exception as e:
-        print(f"    ❌ 保存音频失败: {e}")
+        log.info(f"    ❌ 保存音频失败: {e}")
         return False

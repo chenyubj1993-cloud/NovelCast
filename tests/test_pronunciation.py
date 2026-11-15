@@ -6,7 +6,7 @@ import unittest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from modules.pronunciation import annotate_word, apply_pronunciation  # noqa: E402
+from novelcast.pronunciation import annotate_word, apply_pronunciation  # noqa: E402
 
 
 class PronunciationTest(unittest.TestCase):

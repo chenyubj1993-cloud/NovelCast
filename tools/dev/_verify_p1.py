@@ -4,9 +4,9 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from modules.config_manager import ConfigManager
-from modules.local_tts import concat_segments, synthesize_lines
-from modules.tts_providers import build_provider
+from novelcast.config_manager import ConfigManager
+from novelcast.local_tts import concat_segments, synthesize_lines
+from novelcast.tts_providers import build_provider
 
 cfg = ConfigManager("config/settings.json")
 cast = json.load(open(r"output\全职高手_有声书\cast.json", encoding="utf-8"))

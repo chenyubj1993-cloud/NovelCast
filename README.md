@@ -14,35 +14,49 @@
 
 ```
 NovelCast/
-├── modules/                    # 核心模块
+├── novelcast/                  # 核心包（可 pip install）
+│   ├── cli.py                 # novelcast 命令（run / doctor / config）
+│   ├── pipeline.py            # 三段流水线编排
 │   ├── config_manager.py      # 配置管理
-│   ├── novel_reader.py        # 小说读取与章节分割
-│   ├── character_registry.py  # 全书角色表抽取/合并（新增）
-│   ├── cast_manager.py        # 全书音色分配与持久化（新增）
-│   ├── llm_cache.py           # LLM 分割结果磁盘缓存（新增）
+│   ├── novel_reader.py        # 小说读取与章节分割（txt/epub/docx/doc）
+│   ├── character_registry.py  # 全书角色表抽取/合并
+│   ├── cast_manager.py        # 全书音色分配与持久化
+│   ├── llm_cache.py           # LLM 分割结果磁盘缓存
 │   ├── dialogue_splitter.py   # LLM对话分割（角色表约束 + 缓存）
+│   ├── local_tts.py           # 本地 TTS 逐行合成/拼接/断点续跑
+│   ├── tts_providers.py       # IndexTTS-2.5 / edge 提供方
+│   ├── pronunciation.py       # 多音字标注（<字|拼音>）
+│   ├── script_qa.py           # 剧本对齐与自动修复
 │   ├── voice_assigner.py      # 旧版逐章音色分配（保留兼容）
-│   ├── tts_generator.py       # TTS音频生成
-│   ├── audio_processor.py     # 音频合并与切分
-│   └── utils.py
-├── scripts/                    # 脚本工具
-│   ├── generate.py            # 主生成脚本
-│   ├── run_split.py           # 只分割不合成
-│   ├── configure.py           # 配置管理脚本
-│   ├── analyze_coverage.py    # 覆盖率诊断
-│   └── test_*.py              # API/单块调试脚本
-├── tests/test_core.py         # 离线单测（不需要 API）
+│   ├── tts_generator.py       # 云端 TTS（mimoai）
+│   └── audio_processor.py     # 音频合并与切分
+├── scripts/                    # 独立脚本（生成/修复/音色库/抓数据）
+├── tests/                      # pytest 单测（38 个）
+├── tools/dev/                  # 开发期一次性脚本（vendored 依赖、迁移）
+├── .github/workflows/ci.yml    # GitHub Actions
 ├── config/
 │   ├── settings.json          # 主配置（含密钥，不提交）
 │   └── settings.example.json  # 配置示例
 ├── input/                     # 输入小说
 ├── output/<书名>/             # 剧本、角色表、音色表、音频
 ├── llm_cache/<书名>/          # 分割缓存
-├── llm_raw_responses/         # LLM原始响应（按书名/章节）
 └── README.md
 ```
 
 ## 快速开始
+
+### 0. 一条命令（推荐）
+
+```bash
+pip install -e ".[dev]"          # 轻量依赖；torch / IndexTTS 运行时另装
+novelcast doctor                 # 检查依赖、CUDA、模型目录
+novelcast run input/全职高手.epub -n 2 --dry-run   # 先看计划：字数/段数/预计时长
+novelcast run input/全职高手.epub -n 2 -o output/全职高手
+```
+
+- 全部参数见 `novelcast run --help`；`--tts edge` 可以不下载模型先跑通整条流程。
+- 输入格式：`.txt` / `.epub` / `.docx` / `.doc`（`.mobi` 需先转换）。
+- 旧脚本 `python scripts/generate.py ...` 仍然可用，但 `-c` 在那里表示「前 N 章」，而 `novelcast run` 的 `--chapters 2` 表示「第 2 章」，两者含义不同。
 
 ### 1. 配置API
 
@@ -81,19 +95,19 @@ python scripts/test_api.py
 
 ```bash
 # 生成全部章节
-python scripts/generate.py input/测试短文.txt
+novelcast run input/测试短文.txt
 
-# 只生成前2章
-python scripts/generate.py input/测试短文.txt -c 2
+# 只生成前 2 章
+novelcast run input/测试短文.txt -n 2
 
-# 自定义chunk大小
-python scripts/generate.py input/测试短文.txt --chunk-size 2000
+# 只生成第 2 章
+novelcast run input/测试短文.txt --chapters 2
 
-# 不跳过已生成的章节
-python scripts/generate.py input/测试短文.txt --no-skip
+# 重跑：保留剧本、重合成音频
+novelcast run input/测试短文.txt -n 2 --restart
 
 # 离线：直接复用已有剧本，不调用 LLM（剧本可由人工或其他模型生成）
-python scripts/generate.py input/全职高手.epub -c 1 --offline --split-only
+novelcast run input/全职高手.epub --chapters 1 --offline --split-only
 ```
 
 ## 配置说明
@@ -395,13 +409,13 @@ llm_raw_responses/
 
 ```powershell
 $env:PYTHONPATH = "D:\code\NovelCast\.vendor"
-python modules/local_tts.py "output/全职高手_有声书/002_第0002章 C区47号_script.json" `
+python novelcast/local_tts.py "output/全职高手_有声书/002_第0002章 C区47号_script.json" `
   -o output/ch2.wav --cast "output/全职高手_有声书/cast.json"
 ```
 
 ### 用法 B：接入整条流水线
 
-在 `config/settings.json` 中设置 `"tts": {"provider": "indextts2"}`，之后照常运行 `python scripts/generate.py input/xxx.epub -c 2`；阶段 2 会自动走本地 TTS，并跳过已存在的章节音频。
+在 `config/settings.json` 中设置 `"tts": {"provider": "indextts2"}`，之后照常运行 `novelcast run input/xxx.epub -n 2`；阶段 2 会自动走本地 TTS，并跳过已存在的章节音频。
 
 ### 性能与注意
 
@@ -528,8 +542,8 @@ python scripts/scan_pronunciation.py ... --llm --write
 ## 开发说明
 
 ### 添加新模块
-1. 在 `modules/` 目录创建新文件
-2. 在 `modules/__init__.py` 中导出
+1. 在 `novelcast/` 目录创建新文件
+2. 在 `novelcast/__init__.py` 中导出
 3. 在需要的地方导入使用
 
 ### 修改配置

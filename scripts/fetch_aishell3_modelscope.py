@@ -16,6 +16,8 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
+from novelcast.log import log
+
 API = "https://modelscope.cn/api/v1/datasets/{repo}/repo/tree?Revision=master&Root={root}&PageSize=100&PageNumber=1"
 FILE = "https://modelscope.cn/datasets/{repo}/resolve/master/{path}"
 
@@ -59,10 +61,10 @@ def main() -> int:
     if not spk_info.exists():
         _download(args.repo, "spk-info.txt", spk_info)
 
-    print("📋 列出训练集说话人 …")
+    log.info("📋 列出训练集说话人 …")
     listing = _get_json(API.format(repo=args.repo, root="/train/wav"))
     dirs = [f["Name"] for f in listing["Data"]["Files"] if f["Type"] == "tree"]
-    print(f"   {len(dirs)} 个说话人")
+    log.info(f"   {len(dirs)} 个说话人")
 
     todo = []
     for spk in dirs:
@@ -72,7 +74,7 @@ def main() -> int:
             rel = f"train/wav/{spk}/{name}"
             if not (out / rel).exists():
                 todo.append(rel)
-    print(f"   待下载 {len(todo)} 个")
+    log.info(f"   待下载 {len(todo)} 个")
 
     done = failed = 0
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
@@ -83,10 +85,10 @@ def main() -> int:
             else:
                 failed += 1
             if (done + failed) % 50 == 0:
-                print(f"   … {done + failed}/{len(todo)}")
+                log.info(f"   … {done + failed}/{len(todo)}")
 
     total = sum(f.stat().st_size for f in out.rglob("*.wav"))
-    print(f"✅ 成功 {done}，失败 {failed}，共 {total/1e6:.1f} MB -> {out}")
+    log.info(f"✅ 成功 {done}，失败 {failed}，共 {total/1e6:.1f} MB -> {out}")
     return 0
 
 

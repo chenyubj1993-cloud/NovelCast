@@ -1,0 +1,61 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "novelcast"
+version = "0.1.0"
+description = "Turn novels into multi-voice audiobooks: LLM script annotation + local or cloud TTS"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+authors = [{ name = "NovelCast contributors" }]
+keywords = ["audiobook", "tts", "llm", "chinese", "index-tts"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Topic :: Multimedia :: Sound/Audio :: Speech",
+]
+
+# 只列纯 Python / 轻量依赖；torch、IndexTTS 相关见 README 的「完整安装」
+dependencies = [
+  "numpy",
+  "soundfile>=0.14.0",
+  "soxr",
+  "pyloudnorm",
+  "pypinyin",
+  "jieba",
+  "python-docx",
+  "lxml",
+  "httpx2>=2.12",
+  "openai>=3.40",
+  "edge-tts",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[project.scripts]
+novelcast = "novelcast.cli:main"
+
+[tool.setuptools]
+packages = ["novelcast"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+extend-exclude = [".vendor", ".wheels", "third_party", "models", "data", "output"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+# E402：tests/scripts 里要在 sys.path.insert 之后再 import；E741：单字母 l 是这类
+# 数据脚本的惯用写法，改成 line 反而更绕。
+ignore = ["E501", "E741"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E402"]
+"scripts/*" = ["E402"]
+"novelcast/cli.py" = ["E402"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

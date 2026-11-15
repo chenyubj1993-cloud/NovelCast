@@ -49,7 +49,7 @@ def review_emotions(
     batch_size: int = 15,
 ) -> Tuple[List[Dict[str, str]], List[Tuple[int, str, str]]]:
     """返回 (新行列表, [(行号, 原情绪, 新情绪)])。"""
-    from modules.config_manager import get_config
+    from novelcast.config_manager import get_config
 
     config = config or get_config()
     indices = [
@@ -59,8 +59,8 @@ def review_emotions(
     if not indices:
         return lines, []
 
-    from openai import OpenAI
     import httpx2
+    from openai import OpenAI
 
     client = OpenAI(
         base_url=config.llm_api.base_url,

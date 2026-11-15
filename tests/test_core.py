@@ -18,12 +18,15 @@ def tmpdir(name):
     path.mkdir(parents=True, exist_ok=True)
     return path
 
-from modules.character_registry import (
-    merge_entries, roster_to_prompt_map, sort_roster, is_valid_name,
+from novelcast.cast_manager import apply_cast, build_cast, load_cast, save_cast
+from novelcast.character_registry import (
+    is_valid_name,
+    merge_entries,
+    roster_to_prompt_map,
+    sort_roster,
 )
-from modules.cast_manager import build_cast, apply_cast, save_cast, load_cast
-from modules.llm_cache import LlmCache
-from modules.local_tts import split_text_for_tts
+from novelcast.llm_cache import LlmCache
+from novelcast.local_tts import split_text_for_tts
 
 
 class Cfg:
@@ -234,8 +237,8 @@ def test_crowd_gender_alternates():
 
 
 def test_repair_attribution():
-    from modules.dialogue_splitter import DialogueLine
-    from modules.script_qa import alignment, repair_attributions
+    from novelcast.dialogue_splitter import DialogueLine
+    from novelcast.script_qa import alignment, repair_attributions
 
     original = "“走。”朱先生问：“去哪？”"
     lines = [
@@ -248,8 +251,8 @@ def test_repair_attribution():
 
 
 def test_script_alignment_ignores_quotes():
-    from modules.dialogue_splitter import DialogueLine
-    from modules.script_qa import alignment
+    from novelcast.dialogue_splitter import DialogueLine
+    from novelcast.script_qa import alignment
 
     original = "他说：“走吧。”"
     lines = [DialogueLine(character="旁白", text="他说：", emotion="calm", voice_id=""),
@@ -260,8 +263,8 @@ def test_script_alignment_ignores_quotes():
 
 
 def test_script_alignment_detects_and_repairs_tail():
-    from modules.dialogue_splitter import DialogueLine
-    from modules.script_qa import alignment, repair_tail
+    from novelcast.dialogue_splitter import DialogueLine
+    from novelcast.script_qa import alignment, repair_tail
 
     original = "甲乙丙丁戊己庚辛"
     lines = [DialogueLine(character="旁白", text="甲乙丙丁", emotion="calm", voice_id="")]
@@ -273,7 +276,7 @@ def test_script_alignment_detects_and_repairs_tail():
 
 
 def test_pseudo_chapter_merged():
-    from modules.novel_reader import split_chapters
+    from novelcast.novel_reader import split_chapters
 
     body = "正文" * 120
     text = f"封面\n版权\n\n第一章 开始\n{body}\n第二章 继续\n{body}"
@@ -285,7 +288,8 @@ def test_pseudo_chapter_merged():
 
 def test_out_of_roster_gets_stable_pool_voice():
     from types import SimpleNamespace
-    from modules.cast_manager import apply_cast
+
+    from novelcast.cast_manager import apply_cast
 
     cast = {
         "narrator": "N",

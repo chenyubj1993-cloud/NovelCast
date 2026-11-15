@@ -111,7 +111,7 @@ def repair_tail(original: str, lines: List[Any], character: str = "旁白", max_
     if not missing or len(missing) > max_chars:
         return 0
 
-    from modules.dialogue_splitter import DialogueLine
+    from novelcast.dialogue_splitter import DialogueLine
 
     lines.append(DialogueLine(character=character, text=missing, emotion="calm", voice_id=""))
     return len(missing)
@@ -157,7 +157,7 @@ def repair_attributions(original: str, lines: List[Any]) -> int:
     report = alignment(original, lines)
     if not report["gaps"]:
         return 0
-    from modules.dialogue_splitter import DialogueLine
+    from novelcast.dialogue_splitter import DialogueLine
 
     fixed = 0
     for gap in sorted(report["gaps"], key=lambda g: g.get("joined_start", g["start"]), reverse=True):
@@ -194,7 +194,7 @@ def repair_narration(original: str, lines: List[Any], max_chars: int = 40) -> in
     report = alignment(original, lines)
     if not report["gaps"]:
         return 0
-    from modules.dialogue_splitter import DialogueLine
+    from novelcast.dialogue_splitter import DialogueLine
 
     fixed = 0
     for gap in sorted(report["gaps"], key=lambda g: g.get("joined_start", g["start"]), reverse=True):

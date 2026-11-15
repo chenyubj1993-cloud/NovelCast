@@ -4,11 +4,13 @@
 """
 
 import re
-from typing import List, Dict
 from collections import Counter
+from typing import Dict, List
+
+from novelcast.log import log
 
 from .config_manager import get_config
-from .dialogue_splitter import DialogueLine, update_global_character_map, get_global_character_map
+from .dialogue_splitter import DialogueLine, get_global_character_map, update_global_character_map
 
 
 def assign_voices(lines: List[DialogueLine]) -> Dict[str, str]:
@@ -87,13 +89,13 @@ def assign_voices(lines: List[DialogueLine]) -> Dict[str, str]:
     update_global_character_map(voice_map)
 
     # 打印音色分配结果
-    print(f"    🎭 角色音色分配:")
+    log.info("    🎭 角色音色分配:")
     for char, voice in voice_map.items():
         count = character_counts[char]
         # 标记是否是新角色
         is_new = char not in existing_map
         marker = " (新)" if is_new else ""
-        print(f"      {char} ({count}段) -> {voice}{marker}")
+        log.info(f"      {char} ({count}段) -> {voice}{marker}")
 
     return voice_map
 

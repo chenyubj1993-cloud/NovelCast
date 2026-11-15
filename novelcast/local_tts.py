@@ -5,28 +5,30 @@
   synthesize_lines(lines, work_dir, ...) -> {idx: seg_path}
   synthesize_chapter(script_path, output_wav, ...) -> 整章 wav
 """
-import json
 import hashlib
+import json
 import os
 import re
-import sys
 import time
 
-_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if _PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, _PROJECT_ROOT)
-
-from modules.tts_providers import (  # noqa: E402
+from novelcast.log import log
+from novelcast.pronunciation import (
+    apply_pronunciation,
+)
+from novelcast.pronunciation import (
+    enabled_for as _pron_enabled,
+)
+from novelcast.pronunciation import (
+    mapping_version as _pron_version,
+)
+from novelcast.tts_providers import (
     DEFAULT_EDGE_VOICE,
     EDGE_VOICE_MAP,
     EdgeTTSProvider,
     build_provider,
 )
-from modules.pronunciation import (  # noqa: E402
-    apply_pronunciation,
-    enabled_for as _pron_enabled,
-    mapping_version as _pron_version,
-)
+
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 SILENCE_SECONDS = 0.3
 SILENCE_NARRATION = 0.4  # 旁白段之后留一点气口
@@ -45,7 +47,7 @@ def load_script(path):
 
 def _gender_of_voice(voice):
     try:
-        from modules.cast_manager import GENDER_VOICES, load_voice_bank
+        from novelcast.cast_manager import GENDER_VOICES, load_voice_bank
 
         for gender, voices in GENDER_VOICES.items():
             if voice in voices:
@@ -99,13 +101,13 @@ def resolve_reference(character, cast, refs_dir, edge=None):
     try:
         edge.synthesize(sample, edge_voice, path)
     except Exception as exc:  # noqa: BLE001
-        print(f"    ⚠️ 参考音生成失败（{character}/{edge_voice}）: {exc}")
+        log.info(f"    ⚠️ 参考音生成失败（{character}/{edge_voice}）: {exc}")
         fallback = os.path.join(refs_dir, "旁白.mp3")
         if os.path.exists(fallback):
             import shutil
 
             shutil.copyfile(fallback, path)
-            print("    ↪ 临时借用旁白参考音")
+            log.info("    ↪ 临时借用旁白参考音")
         else:
             # 连旁白参考音都没有时，用默认音色再合成一次，保证流程不中断
             edge.synthesize(sample, DEFAULT_EDGE_VOICE, path)
@@ -220,7 +222,7 @@ def synthesize_lines(
     use_pron = _pron_enabled(config)
     pron_ver = _pron_version() if use_pron else ""
     if use_pron and pron_ver != "none":
-        print("🔤 已启用多音字标注（config/pronunciation.json）")
+        log.info("🔤 已启用多音字标注（config/pronunciation.json）")
     units = []
     for line in lines[:total]:
         text = (line.get("text") or "").strip()
@@ -286,11 +288,11 @@ def synthesize_lines(
         _save_manifest(work_dir, manifest)
         done[k] = seg_path
         if verbose:
-            print(f"  [{k + 1}/{len(units)}] {character} | {unit.get('raw', text)[:20]} -> {os.path.getsize(seg_path) // 1024}KB {time.time() - t0:.0f}s")
+            log.info(f"  [{k + 1}/{len(units)}] {character} | {unit.get('raw', text)[:20]} -> {os.path.getsize(seg_path) // 1024}KB {time.time() - t0:.0f}s")
     if verbose and cached:
-        print(f"  ♻️ 断点续跑：复用 {cached}/{len(units)} 段缓存，本次合成 {len(units) - cached} 段")
+        log.info(f"  ♻️ 断点续跑：复用 {cached}/{len(units)} 段缓存，本次合成 {len(units) - cached} 段")
     if verbose and len(units) > total:
-        print(f"  ✂️ 长句拆分：{total} 行 -> {len(units)} 段（单段上限 {MAX_SEGMENT_CHARS} 字）")
+        log.info(f"  ✂️ 长句拆分：{total} 行 -> {len(units)} 段（单段上限 {MAX_SEGMENT_CHARS} 字）")
     return done
 
 
@@ -319,9 +321,9 @@ def concat_segments(seg_paths, output_wav, characters=None, silence=None,
     """
     import wave
 
-    import librosa
     import numpy as np
     import soundfile as sf
+    import soxr
 
     os.makedirs(os.path.dirname(output_wav) or ".", exist_ok=True)
     chunks = []
@@ -331,7 +333,7 @@ def concat_segments(seg_paths, output_wav, characters=None, silence=None,
         if data.ndim > 1:
             data = data.mean(axis=1)
         if sr != sample_rate:
-            data = librosa.resample(data, orig_sr=sr, target_sr=sample_rate)
+            data = soxr.resample(data, sr, sample_rate, quality="HQ")
         peak = float(np.abs(data).max()) if data.size else 0.0
         if peak > 1.5:  # IndexTTS 输出是 int16 量纲，先拉回 -1~1
             data = data / 32768.0
@@ -420,7 +422,7 @@ def synthesize_chapter(
     characters = [units[i]["character"] for i in sorted(done)] if units else None
     concat_segments(paths, output_wav, characters=characters, silence=silence)
     if verbose:
-        print(f"done {len(paths)} segments in {time.time() - t0:.1f}s -> {output_wav} ({os.path.getsize(output_wav) // 1024}KB)")
+        log.info(f"done {len(paths)} segments in {time.time() - t0:.1f}s -> {output_wav} ({os.path.getsize(output_wav) // 1024}KB)")
     _keep_awake(False)
     return output_wav
 

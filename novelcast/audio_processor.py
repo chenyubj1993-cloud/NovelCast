@@ -3,12 +3,11 @@
 负责音频文件的合并、切分和处理
 """
 
-import os
-import wave
-import struct
 import io
-from pathlib import Path
-from typing import List, Tuple
+import wave
+from typing import List
+
+from novelcast.log import log
 
 from .config_manager import get_config
 
@@ -105,7 +104,7 @@ def merge_wav_files(wav_files: List[str], output_path: str, silence_sec: float =
         return True
 
     except Exception as e:
-        print(f"    ❌ 合并音频失败: {e}")
+        log.info(f"    ❌ 合并音频失败: {e}")
         return False
 
 

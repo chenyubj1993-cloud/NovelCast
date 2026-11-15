@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, List, Sequence, Tuple
 
 REVIEW_SYSTEM = "你是有声书剧本校对，只输出 JSON 数组，不要任何解释。"
 
@@ -46,7 +46,7 @@ def review_unknown(
     batch_size: int = 12,
 ) -> Tuple[List[Dict[str, str]], List[Tuple[int, str, str]]]:
     """返回 (新行列表, [(行号, 原角色, 新角色)])。"""
-    from modules.config_manager import get_config
+    from novelcast.config_manager import get_config
 
     config = config or get_config()
     indices = [i for i, l in enumerate(lines) if l.get("character") == "未知"]
@@ -63,8 +63,8 @@ def review_unknown(
         roster_lines.append("- " + " / ".join(bits))
     roster_text = "\n".join(roster_lines) or "（无）"
 
-    from openai import OpenAI
     import httpx2
+    from openai import OpenAI
 
     # 系统代理是 socks=...，httpx2 会解析成 socks4:// 并报错；复核请求直连即可
     client = OpenAI(

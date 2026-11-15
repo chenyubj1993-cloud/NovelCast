@@ -6,9 +6,11 @@
 分析LLM分割后的覆盖率丢失原因
 """
 
-from typing import List, Dict, Tuple
-from dataclasses import dataclass
 import re
+from dataclasses import dataclass
+from typing import Dict, List
+
+from novelcast.log import log
 
 
 def _strip_ws(text: str) -> str:
@@ -128,26 +130,26 @@ def print_coverage_report(report: CoverageReport, verbose: bool = False) -> None
         report: 覆盖率报告
         verbose: 是否显示详细信息
     """
-    print(f"\n📊 覆盖率分析: {report.chapter_title}")
-    print(f"{'─' * 50}")
-    print(f"   原始文本长度: {report.original_len}字")
-    print(f"   分割后总长度: {report.split_len}字")
-    print(f"   段落数量: {report.segments_count}")
-    print(f"   覆盖率: {report.coverage:.1%}")
-    print(f"   丢失字数: {report.lost_chars}字")
-    print(f"   丢失比例: {report.lost_ratio:.1%}")
+    log.info(f"\n📊 覆盖率分析: {report.chapter_title}")
+    log.info(f"{'─' * 50}")
+    log.info(f"   原始文本长度: {report.original_len}字")
+    log.info(f"   分割后总长度: {report.split_len}字")
+    log.info(f"   段落数量: {report.segments_count}")
+    log.info(f"   覆盖率: {report.coverage:.1%}")
+    log.info(f"   丢失字数: {report.lost_chars}字")
+    log.info(f"   丢失比例: {report.lost_ratio:.1%}")
 
     if report.is_fully_covered:
-        print(f"   ✅ 原始文本完全包含在拼接结果中")
+        log.info("   ✅ 原始文本完全包含在拼接结果中")
     else:
-        print(f"   ❌ 原始文本未完全包含在拼接结果中")
+        log.info("   ❌ 原始文本未完全包含在拼接结果中")
 
     if verbose and report.lost_parts:
-        print(f"\n   🔍 丢失详情:")
+        log.info("\n   🔍 丢失详情:")
         for part in report.lost_parts:
-            print(f"      [{part['type']}]")
-            print(f"         原始: {part['original'][:50]}...")
-            print(f"         拼接: {part['reconstructed'][:50]}...")
+            log.info(f"      [{part['type']}]")
+            log.info(f"         原始: {part['original'][:50]}...")
+            log.info(f"         拼接: {part['reconstructed'][:50]}...")
 
 
 def print_summary(reports: List[CoverageReport]) -> None:
@@ -158,12 +160,12 @@ def print_summary(reports: List[CoverageReport]) -> None:
         reports: 覆盖率报告列表
     """
     if not reports:
-        print("\n📊 没有覆盖率数据")
+        log.info("\n📊 没有覆盖率数据")
         return
 
-    print(f"\n{'='*60}")
-    print(f"  覆盖率汇总")
-    print(f"{'='*60}")
+    log.info(f"\n{'='*60}")
+    log.info("  覆盖率汇总")
+    log.info(f"{'='*60}")
 
     total_original = sum(r.original_len for r in reports)
     total_split = sum(r.split_len for r in reports)
@@ -173,29 +175,29 @@ def print_summary(reports: List[CoverageReport]) -> None:
         if total_original > 0 else 0
     )
 
-    print(f"  章节数: {len(reports)}")
-    print(f"  总原始长度: {total_original}字")
-    print(f"  总分割长度: {total_split}字")
-    print(f"  总丢失字数: {total_lost}字")
-    print(f"  平均覆盖率: {avg_coverage:.1%}")
+    log.info(f"  章节数: {len(reports)}")
+    log.info(f"  总原始长度: {total_original}字")
+    log.info(f"  总分割长度: {total_split}字")
+    log.info(f"  总丢失字数: {total_lost}字")
+    log.info(f"  平均覆盖率: {avg_coverage:.1%}")
 
     # 按覆盖率排序
     sorted_reports = sorted(reports, key=lambda r: r.coverage)
 
-    print(f"\n  📈 覆盖率排名（从低到高）:")
+    log.info("\n  📈 覆盖率排名（从低到高）:")
     for i, report in enumerate(sorted_reports[:5], 1):
         emoji = "✅" if report.coverage >= 0.9 else "⚠️" if report.coverage >= 0.7 else "❌"
-        print(f"     {i}. {emoji} {report.chapter_title}: {report.coverage:.1%} ({report.lost_chars}字丢失)")
+        log.info(f"     {i}. {emoji} {report.chapter_title}: {report.coverage:.1%} ({report.lost_chars}字丢失)")
 
     if len(sorted_reports) > 5:
-        print(f"     ... 还有 {len(sorted_reports) - 5} 个章节")
+        log.info(f"     ... 还有 {len(sorted_reports) - 5} 个章节")
 
     # 统计覆盖率分布
     high = sum(1 for r in reports if r.coverage >= 0.9)
     medium = sum(1 for r in reports if 0.7 <= r.coverage < 0.9)
     low = sum(1 for r in reports if r.coverage < 0.7)
 
-    print(f"\n  📊 覆盖率分布:")
-    print(f"     ✅ 优秀 (≥90%): {high}章")
-    print(f"     ⚠️ 一般 (70-90%): {medium}章")
-    print(f"     ❌ 较差 (<70%): {low}章")
+    log.info("\n  📊 覆盖率分布:")
+    log.info(f"     ✅ 优秀 (≥90%): {high}章")
+    log.info(f"     ⚠️ 一般 (70-90%): {medium}章")
+    log.info(f"     ❌ 较差 (<70%): {low}章")

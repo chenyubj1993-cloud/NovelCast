@@ -16,6 +16,8 @@ import json
 import os
 import sys
 
+from novelcast.log import log
+
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
@@ -25,11 +27,11 @@ try:
     import pypinyin
     from pypinyin import Style
 except ImportError as exc:  # pragma: no cover
-    print(f"缺少依赖：{exc}（需要 jieba / pypinyin）")
+    log.info(f"缺少依赖：{exc}（需要 jieba / pypinyin）")
     raise SystemExit(1)
 
-from modules.config_manager import Config
-from modules.pronunciation import DEFAULT_PATH, load_mapping
+from novelcast.config_manager import Config
+from novelcast.pronunciation import DEFAULT_PATH, load_mapping
 
 
 def iter_texts(path, limit=None):
@@ -86,7 +88,7 @@ def collect(texts, limit_words=200):
 
 def ask_llm(cands, config):
     """让 DeepSeek 为每个候选词选读音，返回 {word: 'CHONG2 QING4'}。"""
-    from modules.dialogue_splitter import get_llm_client
+    from novelcast.dialogue_splitter import get_llm_client
 
     client = get_llm_client(config)
     prompt = (
@@ -126,24 +128,24 @@ def main():
     texts = list(iter_texts(paths[0], args.limit or None))
     cands = collect(texts, args.max_words)
     if not cands:
-        print("没有发现多音字风险词")
+        log.info("没有发现多音字风险词")
         return
 
     for c in cands:
         chars = "；".join(f"{x['char']} 默认{x['default']} 可选{'/'.join(x['all'])}" for x in c["chars"])
-        print(f"- {c['word']}: {chars}\n  上下文：{c['context']}")
+        log.info(f"- {c['word']}: {chars}\n  上下文：{c['context']}")
 
     if args.llm:
         config = Config()
         chosen = ask_llm(cands, config)
         if not chosen:
-            print("LLM 没有返回可用结果")
+            log.info("LLM 没有返回可用结果")
             return
-        print("\n建议读音：")
+        log.info("\n建议读音：")
         for k, v in chosen.items():
-            print(f"  {k}: {v}")
+            log.info(f"  {k}: {v}")
         if args.write:
-            data = load_mapping() or {}
+            load_mapping() or {}
             if os.path.exists(DEFAULT_PATH):
                 with open(DEFAULT_PATH, "r", encoding="utf-8") as f:
                     doc = json.load(f)
@@ -152,7 +154,7 @@ def main():
             doc.setdefault("words", {}).update(chosen)
             with open(DEFAULT_PATH, "w", encoding="utf-8") as f:
                 json.dump(doc, f, ensure_ascii=False, indent=2)
-            print(f"已写入 {DEFAULT_PATH}（{len(chosen)} 条）")
+            log.info(f"已写入 {DEFAULT_PATH}（{len(chosen)} 条）")
 
 
 if __name__ == "__main__":

@@ -2,11 +2,10 @@
 工具函数模块
 """
 
-import os
 import hashlib
 import json
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
 
 def safe_filename(name: str) -> str:

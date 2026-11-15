@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.join(ROOT, "third_party", "index-tts"))
 
 import soundfile as sf
 
-from modules.tts_providers import IndexTTS2Provider
+from novelcast.tts_providers import IndexTTS2Provider
 
 OUT = os.path.join(ROOT, "output", "_verify_tts25")
 os.makedirs(OUT, exist_ok=True)

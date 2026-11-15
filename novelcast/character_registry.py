@@ -13,7 +13,9 @@ import json
 import re
 import time
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional
+
+from novelcast.log import log
 
 ROSTER_VERSION = 1
 
@@ -217,14 +219,14 @@ async def _extract_chunk_async(client, model: str, text: str, retries: int = 2) 
             last_error = exc
             if attempt < retries:
                 await asyncio.sleep(2 * (attempt + 1))
-    print(f"    ⚠️ 角色抽取失败（{type(last_error).__name__}: {last_error}），跳过该片段")
+    log.info(f"    ⚠️ 角色抽取失败（{type(last_error).__name__}: {last_error}），跳过该片段")
     return []
 
 
 async def build_roster_async(chapters, book_name: str, client, config, max_chars: int = EXTRACT_CHUNK_CHARS) -> dict:
     """全书角色抽取（分片并发 + 合并）。"""
     chunks = list(_iter_chunks(chapters, max_chars))
-    print(f"  🔍 角色抽取: 全书 {sum(len(c.text) for c in chapters)} 字 → {len(chunks)} 个片段")
+    log.info(f"  🔍 角色抽取: 全书 {sum(len(c.text) for c in chapters)} 字 → {len(chunks)} 个片段")
 
     semaphore = asyncio.Semaphore(max(1, config.concurrency.llm_concurrency))
     model = config.llm_api.model
@@ -233,7 +235,7 @@ async def build_roster_async(chapters, book_name: str, client, config, max_chars
         async with semaphore:
             start = time.time()
             entries = await _extract_chunk_async(client, model, text)
-            print(f"    片段{idx+1}/{len(chunks)} ({len(text)}字): {len(entries)}个角色，{time.time()-start:.1f}s")
+            log.info(f"    片段{idx+1}/{len(chunks)} ({len(text)}字): {len(entries)}个角色，{time.time()-start:.1f}s")
             return entries
 
     results = await asyncio.gather(*(work(i, t, x) for i, (t, x) in enumerate(chunks)))
@@ -248,7 +250,7 @@ async def build_roster_async(chapters, book_name: str, client, config, max_chars
         "generated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
         "characters": sort_roster(characters),
     }
-    print(f"  🎭 角色表: 共 {len(roster['characters'])} 个角色")
+    log.info(f"  🎭 角色表: 共 {len(roster['characters'])} 个角色")
     return roster
 
 

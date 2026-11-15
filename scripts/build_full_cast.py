@@ -19,12 +19,14 @@ import sys
 from collections import Counter
 from pathlib import Path
 
+from novelcast.log import log
+
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from modules.character_registry import is_valid_name  # noqa: E402
-from modules.config_manager import ConfigManager  # noqa: E402
-from modules.novel_reader import read_novel  # noqa: E402
+from novelcast.character_registry import is_valid_name  # noqa: E402
+from novelcast.config_manager import ConfigManager  # noqa: E402
+from novelcast.novel_reader import read_novel  # noqa: E402
 
 EXTRA_STOP = {
     "他们", "她们", "我们", "你们", "自己", "大家", "众人", "有人", "别人", "对方",
@@ -125,7 +127,7 @@ def main() -> int:
 
     config = ConfigManager(args.config)
     title, text = read_novel(args.book)
-    print(f"📖 {title}：{len(text):,} 字，正在做词性标注…")
+    log.info(f"📖 {title}：{len(text):,} 字，正在做词性标注…")
 
     counts: Counter = Counter()
     for word, flag in pseg.cut(text):
@@ -154,7 +156,7 @@ def main() -> int:
     # 战队名/公会名往往没有「某某说道」的用法，用说话动词再筛一遍
     counts = Counter({k: v for k, v in counts.items() if speech_count(text, k) >= 2})
     counts, alias_map = merge_aliases(counts)
-    print(f"🔎 候选人物 {len(counts)} 个")
+    log.info(f"🔎 候选人物 {len(counts)} 个")
 
     roster_path = ROOT / "output" / f"{title}_有声书" / "characters.json"
     known: dict = {}
@@ -183,18 +185,18 @@ def main() -> int:
 
     for i, (name, count) in enumerate(counts.most_common(args.top), 1):
         c = characters[name]
-        print(f"  {i:3d}. {name:<6} 提及={count:<6} 性别={c['gender']}")
+        log.info(f"  {i:3d}. {name:<6} 提及={count:<6} 性别={c['gender']}")
 
-    from modules.cast_manager import build_cast, print_cast, save_cast
+    from novelcast.cast_manager import build_cast, print_cast, save_cast
 
     config.config["main_character_count"] = args.mains
     cast = build_cast({"characters": characters}, config)
-    print()
+    log.info()
     print_cast(cast)
 
     out_dir = ROOT / "output" / f"{title}_有声书"
     if not args.write:
-        print(f"\n（预览模式，未写入；加 --write 保存到 {out_dir / 'cast.json'}）")
+        log.info(f"\n（预览模式，未写入；加 --write 保存到 {out_dir / 'cast.json'}）")
         return 0
 
     save_cast(cast, out_dir / "cast.json")
@@ -202,7 +204,7 @@ def main() -> int:
         json.dumps({"version": 1, "book": title, "characters": characters}, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
-    print(f"\n💾 已写入 {out_dir / 'cast.json'} 与 characters.json（{len(characters)} 个角色）")
+    log.info(f"\n💾 已写入 {out_dir / 'cast.json'} 与 characters.json（{len(characters)} 个角色）")
     return 0
 
 

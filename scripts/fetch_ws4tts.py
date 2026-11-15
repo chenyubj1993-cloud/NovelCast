@@ -18,6 +18,8 @@ import urllib.request
 from collections import Counter
 from pathlib import Path
 
+from novelcast.log import log
+
 BASE = ("https://modelscope.cn/datasets/dukguo/WenetSpeech4TTS/"
         "resolve/master/Premium/WenetSpeech4TTS_Premium_{part}.tar.gz")
 SPK_RE = re.compile(r"_(S\d{5})\.wav$")
@@ -65,7 +67,7 @@ def main() -> int:
     wav_dir.mkdir(parents=True, exist_ok=True)
 
     url = BASE.format(part=args.part)
-    print(f"GET {url}")
+    log.info(f"GET {url}")
     counts: Counter[str] = Counter()
     done_spk: set[str] = set()
     got = 0
@@ -88,7 +90,7 @@ def main() -> int:
                 if counts[spk] >= args.per_speaker:
                     done_spk.add(spk)
                     if len(done_spk) >= args.speakers:
-                        print(f"够 {len(done_spk)} 个说话人了，停止下载")
+                        log.info(f"够 {len(done_spk)} 个说话人了，停止下载")
                         break
                     continue
                 fh = tar.extractfile(member)
@@ -99,19 +101,19 @@ def main() -> int:
                 counts[spk] += 1
                 got += 1
                 if got % 50 == 0:
-                    print(f"  {got} 条 / {len(counts)} 人 / {reader.bytes/1e6:.0f}MB / {time.time()-t0:.0f}s")
+                    log.info(f"  {got} 条 / {len(counts)} 人 / {reader.bytes/1e6:.0f}MB / {time.time()-t0:.0f}s")
                 if reader.bytes > args.max_bytes:
-                    print("达到体积上限，停止")
+                    log.info("达到体积上限，停止")
                     break
     except Exception as exc:  # 主动断开时会抛，属于正常结束
-        print(f"停止: {type(exc).__name__}: {exc}")
+        log.info(f"停止: {type(exc).__name__}: {exc}")
     finally:
         try:
             gz.close()
         finally:
             resp.close()
 
-    print(f"完成: {got} 条, {len(counts)} 个说话人, {reader.bytes/1e6:.0f}MB, 输出 {out}")
+    log.info(f"完成: {got} 条, {len(counts)} 个说话人, {reader.bytes/1e6:.0f}MB, 输出 {out}")
     return 0 if got else 1
 
 

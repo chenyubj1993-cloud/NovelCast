@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import numpy as np
 import soundfile as sf
 
-from modules.local_tts import concat_segments
+from novelcast.local_tts import concat_segments
 
 
 def _tone(path, seconds=0.5, amp=0.08, sr=24000):

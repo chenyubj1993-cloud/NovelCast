@@ -25,6 +25,8 @@ from pathlib import Path
 
 import numpy as np
 
+from novelcast.log import log
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
@@ -216,18 +218,18 @@ def main() -> int:
 
     root = Path(args.source)
     if not root.is_dir():
-        print(f"目录不存在: {root}")
+        log.info(f"目录不存在: {root}")
         return 2
 
-    print(f"🔍 扫描 {root} ...")
+    log.info(f"🔍 扫描 {root} ...")
     speaker_dirs = _find_speaker_dirs(root, args.speaker_glob)
-    print(f"   说话人 {len(speaker_dirs)} 个")
+    log.info(f"   说话人 {len(speaker_dirs)} 个")
     if not speaker_dirs:
-        print("没找到 wav 文件，检查 --speaker-glob 或目录结构")
+        log.info("没找到 wav 文件，检查 --speaker-glob 或目录结构")
         return 2
 
     spk_info = _load_speaker_info(root)
-    print(f"   说话人元信息 {len(spk_info)} 条")
+    log.info(f"   说话人元信息 {len(spk_info)} 条")
 
     candidates = []
     for spk, wavs in speaker_dirs:
@@ -236,7 +238,7 @@ def main() -> int:
             try:
                 info = _analyse(wav)
             except Exception as exc:  # noqa: BLE001
-                print(f"   ⚠️ 跳过 {os.path.basename(wav)}: {exc}")
+                log.info(f"   ⚠️ 跳过 {os.path.basename(wav)}: {exc}")
                 continue
             if info["duration"] < 0.8:
                 # 单句太短的先留着，后面会和同说话人的其它句子拼起来
@@ -275,7 +277,7 @@ def main() -> int:
         })
 
     if not candidates:
-        print("没有满足时长要求的音频")
+        log.info("没有满足时长要求的音频")
         return 2
 
     # 性别均衡：female / male / unknown 轮流取
@@ -302,12 +304,12 @@ def main() -> int:
             voice_id = f"{voice_id}-{i:02d}"
         out_path = refs_dir / f"{voice_id}.wav"
         if args.dry_run:
-            print(f"   [dry] {voice_id}: {c['score']:.3f} {c['duration']}s {c['gender']} <- {c['paths'][0]}")
+            log.info(f"   [dry] {voice_id}: {c['score']:.3f} {c['duration']}s {c['gender']} <- {c['paths'][0]}")
             continue
         try:
             made = _make_reference(c["paths"], out_path)
         except Exception as exc:  # noqa: BLE001
-            print(f"   ⚠️ 生成失败 {voice_id}: {exc}")
+            log.info(f"   ⚠️ 生成失败 {voice_id}: {exc}")
             continue
         entries.append({
             "id": voice_id,
@@ -322,7 +324,7 @@ def main() -> int:
             "sample_rate": made["samplerate"],
             "score": c["score"],
         })
-        print(f"   ✅ {voice_id:20s} {created_tag(c)} {c['gender']:6s} {made['duration']:5.1f}s score={c['score']:.3f}")
+        log.info(f"   ✅ {voice_id:20s} {created_tag(c)} {c['gender']:6s} {made['duration']:5.1f}s score={c['score']:.3f}")
 
     if args.dry_run:
         return 0
@@ -346,8 +348,8 @@ def main() -> int:
         "voices": all_voices,
     }
     bank_path.write_text(json.dumps(bank, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"\n🎚️  已写入 {len(entries)} 个音色（库内共 {len(all_voices)}）-> {bank_path}")
-    print(f"   参考音目录: {refs_dir}")
+    log.info(f"\n🎚️  已写入 {len(entries)} 个音色（库内共 {len(all_voices)}）-> {bank_path}")
+    log.info(f"   参考音目录: {refs_dir}")
     return 0
 
 

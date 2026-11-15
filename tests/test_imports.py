@@ -29,8 +29,7 @@ MODULES = [
 
 def test_modules_import():
     for name in MODULES:
-        __import__(f"modules.{name}")
-    print(f"  {len(MODULES)} 个模块导入成功")
+        __import__(f"novelcast.{name}")
 
 
 def test_generate_script_imports():

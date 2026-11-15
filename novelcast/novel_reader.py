@@ -5,11 +5,13 @@
 
 import os
 import re
+from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Tuple
-from dataclasses import dataclass
 
-from .config_manager import get_config, INPUT_DIR
+from novelcast.log import log
+
+from .config_manager import INPUT_DIR, get_config
 
 
 @dataclass
@@ -53,8 +55,8 @@ def read_novel(file_path: str) -> Tuple[str, str]:
     else:
         raise ValueError(f"不支持的文件格式: {suffix}")
 
-    print(f"  📖 读取小说: {path}")
-    print(f"     总字数: {len(content)}")
+    log.info(f"  📖 读取小说: {path}")
+    log.info(f"     总字数: {len(content)}")
 
     return book_name, content
 
@@ -88,8 +90,8 @@ def _read_doc(path: Path) -> str:
 
     try:
         # 尝试使用 Word COM 自动化
-        import win32com.client
         import pythoncom
+        import win32com.client
         pythoncom.CoInitialize()
 
         word = win32com.client.Dispatch("Word.Application")
@@ -136,7 +138,8 @@ def _read_epub(path: Path) -> str:
     import posixpath
     import zipfile
 
-    from lxml import etree, html as lxml_html
+    from lxml import etree
+    from lxml import html as lxml_html
 
     with zipfile.ZipFile(path) as zf:
         names = set(zf.namelist())
@@ -216,7 +219,7 @@ def split_chapters(text: str) -> List[Chapter]:
     Returns:
         章节列表
     """
-    config = get_config()
+    get_config()
 
     # 尝试按章节标题分割
     chapter_patterns = [
@@ -267,7 +270,7 @@ def split_chapters(text: str) -> List[Chapter]:
         kept = [c for c in chapters if len(c.text) >= 100]
         dropped = len(chapters) - len(kept)
         if dropped:
-            print(f"     已忽略 {dropped} 个过短片段（<100字）")
+            log.info(f"     已忽略 {dropped} 个过短片段（<100字）")
             for i, ch in enumerate(kept, 1):
                 ch.number = i
             chapters = kept
@@ -291,7 +294,7 @@ def split_chapters(text: str) -> List[Chapter]:
         if carry and merged:
             merged[-1].text = (merged[-1].text + "\n" + carry).strip()
         if len(merged) != len(chapters):
-            print(f"     已合并 {len(chapters) - len(merged)} 个目录/封面类伪章节")
+            log.info(f"     已合并 {len(chapters) - len(merged)} 个目录/封面类伪章节")
             for i, ch in enumerate(merged, 1):
                 ch.number = i
             chapters = merged
@@ -304,12 +307,12 @@ def split_chapters(text: str) -> List[Chapter]:
             text=text.strip()
         ))
 
-    print(f"     章节数: {len(chapters)}")
+    log.info(f"     章节数: {len(chapters)}")
     preview = chapters if len(chapters) <= 20 else chapters[:10] + chapters[-5:]
     for ch in preview:
-        print(f"       {ch.number:03d}. {ch.title} ({len(ch.text)}字)")
+        log.info(f"       {ch.number:03d}. {ch.title} ({len(ch.text)}字)")
     if len(chapters) > len(preview):
-        print(f"       …… 其余 {len(chapters) - len(preview)} 章略")
+        log.info(f"       …… 其余 {len(chapters) - len(preview)} 章略")
 
     return chapters
 
