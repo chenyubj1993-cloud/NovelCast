@@ -1,12 +1,14 @@
 # -*- coding: utf-8 -*-
 """TTS 提供方适配层。
 
-支持两种后端：
-1. IndexTTS-2（本地、GPU、零样本音色克隆，可带情绪文本）
+支持三类后端：
+1. IndexTTS-2/2.5（本地、GPU、零样本音色克隆，可带情绪文本）
 2. edge-tts（微软免费在线音色，作为备用/参考音生成器）
+3. OpenAI 兼容的云端 /audio/speech（OpenAI、SiliconFlow、one-api 网关等）
 
 对外统一接口：provider.synthesize(text, voice, output_path, emotion=None)
-其中 voice 对 IndexTTS2 是参考音频路径，对 edge-tts 是音色名（如 zh-CN-YunxiNeural）。
+voice 对 IndexTTS2 是参考音频路径，对 edge 是音色名（如 zh-CN-YunxiNeural），
+对云端 TTS 是服务商的音色 id（如 nova / alloy）。
 """
 import asyncio
 import os
@@ -277,6 +279,74 @@ class IndexTTS2Provider:
         return output_path
 
 
+class OpenAITTSProvider:
+    """OpenAI 兼容的云端 TTS：POST {base_url}/audio/speech。
+
+    覆盖 OpenAI 官方（gpt-4o-mini-tts / tts-1）、SiliconFlow 的 CosyVoice、
+    以及各类 one-api / new-api 网关——只要对方实现了这个端点。
+    """
+    name = "openai"
+    kind = "cloud"
+
+    def __init__(self, base_url, api_key, model="gpt-4o-mini-tts",
+                 response_format="wav", instructions=True, speed=None, timeout=180):
+        if not base_url:
+            raise ValueError("云端 TTS 缺少 base_url（tts.cloud_base_url）")
+        if not api_key:
+            raise ValueError("云端 TTS 缺少 api_key（tts.cloud_api_key 或环境变量 OPENAI_API_KEY）")
+        self.base_url = base_url.rstrip("/")
+        self.api_key = api_key
+        self.model = model
+        self.response_format = response_format
+        self.instructions = bool(instructions)
+        self.speed = speed
+        self.timeout = float(timeout)
+        self.version = model
+        self.model_dir = ""
+        self.duration_factor = ""
+        self.lang = ""
+        self.emotion_mode = "text" if self.instructions else "off"
+        self.emo_alpha = ""
+
+    def synthesize(self, text, voice, output_path, emotion=None):
+        import httpx2
+
+        payload = {
+            "model": self.model,
+            "voice": voice or "alloy",
+            "input": text,
+            "response_format": self.response_format,
+        }
+        if self.speed:
+            payload["speed"] = float(self.speed)
+        emo = (emotion or "").strip()
+        if self.instructions and emo and emo not in ("neutral", "平静"):
+            payload["instructions"] = EMOTION_PROMPTS.get(emo, emo)
+
+        last_err = None
+        for _ in range(2):
+            try:
+                # trust_env=False：系统代理可能是 socks://，httpx 解析会直接报错
+                with httpx2.Client(timeout=self.timeout, trust_env=False) as client:
+                    resp = client.post(
+                        f"{self.base_url}/audio/speech",
+                        headers={"Authorization": f"Bearer {self.api_key}"},
+                        json=payload,
+                    )
+                    resp.raise_for_status()
+                    data = resp.content
+                if not data:
+                    raise RuntimeError("云端返回空响应")
+                if self.response_format == "wav" and not data.startswith(b"RIFF"):
+                    raise RuntimeError("云端返回的不是 WAV（确认该服务支持 response_format=wav）")
+                with open(output_path, "wb") as f:
+                    f.write(data)
+                return output_path
+            except Exception as exc:  # noqa: BLE001
+                last_err = exc
+        raise RuntimeError(f"云端 TTS 合成失败：{last_err}")
+
+
 def build_provider(config, name=None):
     """按配置构建 TTS 提供方。config 为 config_manager.Config 实例或 dict。"""
     data = getattr(config, "config", config) or {}
@@ -284,6 +354,15 @@ def build_provider(config, name=None):
     name = name or tts_cfg.get("provider") or "indextts2"
     if name == "edge":
         return EdgeTTSProvider(voice_map=tts_cfg.get("edge_voice_map"))
+    if name in ("openai", "cloud"):
+        return OpenAITTSProvider(
+            base_url=tts_cfg.get("cloud_base_url") or os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1"),
+            api_key=tts_cfg.get("cloud_api_key") or os.environ.get("OPENAI_API_KEY", ""),
+            model=tts_cfg.get("cloud_model") or "gpt-4o-mini-tts",
+            response_format=tts_cfg.get("cloud_format", "wav"),
+            instructions=tts_cfg.get("cloud_instructions", True),
+            speed=tts_cfg.get("cloud_speed"),
+        )
     if name in ("indextts2", "indextts2.5"):
         version = tts_cfg.get("model_version") or ("2.5" if name.endswith("2.5") else "2")
         return IndexTTS2Provider(

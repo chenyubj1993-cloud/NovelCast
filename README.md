@@ -397,6 +397,33 @@ llm_raw_responses/
 - 提示词里的角色表是「参考名单」，LLM 仍可能输出表外角色；表外角色统一回落到旁白音色，并在日志中列出。
 - 中文省略主语的连续对话仍可能标错说话人，建议先跑 `--split-only` 检查 `*_readable.txt`。
 
+## 云端 TTS（OpenAI 兼容）
+
+不想装 5GB 模型时可以把合成放云端：只要服务商实现 `POST /v1/audio/speech` 就能接（OpenAI 官方、SiliconFlow 的 CosyVoice、one-api / new-api 网关都行）。
+
+```json
+"tts": {
+  "provider": "openai",
+  "cloud_base_url": "https://api.siliconflow.cn/v1",
+  "cloud_api_key": "sk-...",
+  "cloud_model": "FunAudioLLM/CosyVoice2-0.5B",
+  "cloud_voices": {"female": ["音色 id"], "male": ["音色 id"], "unknown": ["音色 id"]}
+}
+```
+
+也可以用环境变量：`OPENAI_BASE_URL`、`OPENAI_API_KEY`（配置里留空时生效）。
+
+```bash
+novelcast run input/book.epub -n 2 --tts openai
+```
+
+注意：
+
+- `cloud_voices` 填的是**服务商的音色 id**（如 `nova`、`alloy`），不是本地文件名；`character_voices` 里的覆盖同样要用云端 id，否则服务端会拒绝。
+- 情绪通过 `instructions` 传给支持它的模型（如 `gpt-4o-mini-tts`）；不支持的服务会忽略这个字段。
+- 必须能返回 `wav`（`cloud_format` 可改，但拼接需要 wav）。
+- 云端按字符计费，先用 `--chapters 1 --first-chars 500` 试一小段。
+
 ## 本地 TTS（IndexTTS-2.5，可选）
 
 本地推理需要一张 8GB 左右的 NVIDIA 显卡。没有显卡就用 `--tts edge`（免费在线，需联网），整条流水线一样能跑通。

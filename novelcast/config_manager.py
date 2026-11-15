@@ -90,6 +90,18 @@ DEFAULT_CONFIG = {
         "silence_dialogue": 0.15,  # 连续对白之间停顿（秒）
         "reference_dir": "output/_refs",
         "edge_voice_map": {},
+        # 云端 TTS（OpenAI 兼容的 /audio/speech）
+        "cloud_base_url": "",  # 留空则读 OPENAI_BASE_URL，再退回 OpenAI 官方
+        "cloud_api_key": "",  # 留空则读 OPENAI_API_KEY
+        "cloud_model": "gpt-4o-mini-tts",
+        "cloud_format": "wav",
+        "cloud_instructions": True,
+        "cloud_speed": None,
+        "cloud_voices": {
+            "female": ["nova", "shimmer"],
+            "male": ["onyx", "echo"],
+            "unknown": ["alloy"],
+        },
     },
 
     # 音色预设
@@ -231,6 +243,13 @@ class TtsConfig:
     silence_dialogue: float = 0.15
     reference_dir: str = "output/_refs"
     edge_voice_map: dict = field(default_factory=dict)
+    cloud_base_url: str = ""
+    cloud_api_key: str = ""
+    cloud_model: str = "gpt-4o-mini-tts"
+    cloud_format: str = "wav"
+    cloud_instructions: bool = True
+    cloud_speed: Optional[float] = None
+    cloud_voices: dict = field(default_factory=dict)
 
 
 class ConfigManager:

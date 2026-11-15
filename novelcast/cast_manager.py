@@ -133,6 +133,10 @@ def build_cast(
 
     characters = sort_roster(characters)
 
+    tts_cfg = config.config.get("tts", {}) or {}
+    if str(tts_cfg.get("provider", "")).lower() in ("openai", "cloud"):
+        return _cloud_cast(characters, config, tts_cfg)
+
     # 主要角色：出场次数最多的前 N 个（也可以用 main_characters 显式指定），
     # 沿用原来的 8 个 edge 音色；次要角色和群杂才用真人音色库。
     main_names = config.config.get("main_characters") or []
@@ -222,6 +226,53 @@ def build_cast(
     if dup:
         log.info(f"  ⚠️ 音色数量不足，以下音色被复用: {', '.join(sorted(dup))}")
     return cast
+
+
+def _cloud_cast(characters, config, tts_cfg):
+    """云端 TTS 的音色是服务商 id（nova / onyx …），不涉及参考音文件。"""
+    pools = tts_cfg.get("cloud_voices") or {}
+    pools = {g: [str(v) for v in (pools.get(g) or [])] for g in ("female", "male", "unknown")}
+    if not any(pools.values()):
+        pools = {"female": ["nova", "shimmer"], "male": ["onyx", "echo"], "unknown": ["alloy"]}
+
+    overrides = config.config.get("character_voices") or {}
+    known = {v for ids in pools.values() for v in ids}
+    for name, voice in overrides.items():
+        if voice and voice not in known:
+            log.info(f"  ⚠️ character_voices[{name}]={voice} 不在 cloud_voices 里，云端可能拒绝该音色")
+    default_pool = pools["female"] or pools["unknown"] or ["alloy"]
+    narrator = overrides.get("旁白") or default_pool[0]
+    voices = {"旁白": narrator}
+    usage = Counter({narrator: 1})
+
+    for name, info in characters.items():
+        if name == "旁白":
+            continue
+        voice = overrides.get(name)
+        if not voice:
+            gender = info.get("gender", "unknown")
+            pool = pools.get(gender) or pools["unknown"] or default_pool
+            free = [v for v in pool if v not in usage]
+            voice = free[0] if free else min(pool, key=lambda v: usage[v])
+        voices[name] = voice
+        usage[voice] += 1
+
+    crowd_genders = {v: g for g, ids in pools.items() for v in ids}
+    assigned = set(voices.values())
+    crowd_pool = [v for v in dict.fromkeys(sum(pools.values(), [])) if v not in assigned]
+    if not crowd_pool:
+        crowd_pool = [v for v in dict.fromkeys(voices.values()) if v != narrator]
+
+    return {
+        "version": CAST_VERSION,
+        "generated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "narrator": narrator,
+        "voice_bank": "",
+        "crowd_pool": crowd_pool,
+        "crowd_genders": crowd_genders,
+        "voices": voices,
+        "characters": characters,
+    }
 
 
 CROWD_CHARACTERS = {

@@ -43,7 +43,18 @@
     "silence_narration": 0.4,
     "silence_dialogue": 0.15,
     "reference_dir": "output/_refs",
-    "edge_voice_map": {}
+    "edge_voice_map": {},
+    "cloud_base_url": "https://api.openai.com/v1",
+    "cloud_api_key": "",
+    "cloud_model": "gpt-4o-mini-tts",
+    "cloud_format": "wav",
+    "cloud_instructions": true,
+    "cloud_speed": null,
+    "cloud_voices": {
+      "female": ["nova", "shimmer"],
+      "male": ["onyx", "echo"],
+      "unknown": ["alloy"]
+    }
   },
   "voice_presets": {
     "冰糖": "冰糖",

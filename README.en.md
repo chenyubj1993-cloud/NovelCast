@@ -87,6 +87,31 @@ Configuration is read from `config/settings.json` (create it from the example). 
 | `--keep-segments` | Keep `_temp_XXX/` caches (deleted after a successful chapter otherwise) |
 | `--rebuild-roster` / `--rebuild-cast` | Re-extract `characters.json` / rebuild `cast.json` |
 
+## Cloud TTS (OpenAI-compatible)
+
+No GPU? Point synthesis at any service that implements `POST /v1/audio/speech` (OpenAI, SiliconFlow's CosyVoice, one-api / new-api gateways):
+
+```json
+"tts": {
+  "provider": "openai",
+  "cloud_base_url": "https://api.openai.com/v1",
+  "cloud_api_key": "sk-...",
+  "cloud_model": "gpt-4o-mini-tts",
+  "cloud_voices": {"female": ["nova"], "male": ["onyx"], "unknown": ["alloy"]}
+}
+```
+
+`OPENAI_BASE_URL` / `OPENAI_API_KEY` are used when the config fields are empty. Then:
+
+```bash
+novelcast run input/book.epub -n 2 --tts openai
+```
+
+- `cloud_voices` holds **provider voice ids**, not local files; `character_voices` overrides must be cloud ids too.
+- Emotion is passed as `instructions` (supported by `gpt-4o-mini-tts`; other services ignore it).
+- The response must be WAV (`cloud_format` is configurable, but concatenation needs WAV).
+- Billing is per character — try `--chapters 1 --first-chars 500` first.
+
 ## Configuration
 
 Start from [`config/settings.example.json`](config/settings.example.json), copy it to `config/settings.json`, and keep the real file out of git. `novelcast config` prints the merged result.

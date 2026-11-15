@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python
+#!/usr/bin/env python
 """NovelCast 命令行入口：novelcast run book.epub -o out/"""
 
 from __future__ import annotations
@@ -158,7 +158,7 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("-n", "--first-chapters", type=int, help="只处理前 N 章")
     r.add_argument("--chapters", help="章节号，如 1,3,5-7")
     r.add_argument("--first-chars", type=int, help="每章只取前 N 字（试听）")
-    r.add_argument("--tts", choices=["indextts2", "edge", "mimoai"], help="TTS 引擎")
+    r.add_argument("--tts", choices=["indextts2", "edge", "openai", "mimoai"], help="TTS 引擎")
     r.add_argument("--model-version", choices=["2", "2.5"], help="IndexTTS 版本")
     r.add_argument("--speed", type=float, help="语速倍率 0.5~2.0（越小越快）")
     r.add_argument("--emotion-mode", choices=["text", "vector", "off"], help="情绪驱动方式")

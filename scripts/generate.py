@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
 有声书生成主脚本
@@ -427,12 +427,13 @@ async def generate_chapter_audio(
         for line in lines:
             line.voice_id = voice_map.get(line.character, config.config.get("voice_presets", {}).get("default", "冰糖"))
 
-    # 本地 TTS（IndexTTS-2 / edge-tts）：逐行合成后直接拼成整章
+    # 本地/云端逐行 TTS（IndexTTS-2 / edge-tts / OpenAI 兼容云端）：逐行合成后直接拼成整章
     provider_name = config.config.get("tts", {}).get("provider", "mimoai")
-    if provider_name in ("indextts2", "edge"):
+    if provider_name in ("indextts2", "edge", "openai", "cloud"):
         from novelcast.local_tts import concat_segments, synthesize_lines
 
-        log.info(f"    🎧 本地 TTS（{provider_name}），逐行合成中…")
+        label = "云端 TTS" if provider_name in ("openai", "cloud") else "本地 TTS"
+        log.info(f"    🎧 {label}（{provider_name}），逐行合成中…")
         temp_dir = config.get_temp_dir(book_name, chapter.number)
         tts_cfg = config.config.get("tts", {})
         units = []
@@ -457,7 +458,7 @@ async def generate_chapter_audio(
             segment_files,
             output_path,
             characters=characters,
-            target_lufs=float(tts_cfg.get("loudness_lufs", -16.0)),
+            target_lufs=float(tts_cfg.get("loudness_lufs", -18.0)),
             silence_narration=float(tts_cfg.get("silence_narration", 0.4)),
             silence_dialogue=float(tts_cfg.get("silence_dialogue", 0.15)),
             stats=stats,

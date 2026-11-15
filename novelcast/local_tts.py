@@ -276,7 +276,11 @@ def synthesize_lines(
             cached += 1
             done[k] = seg_path
             continue
-        ref = resolve_reference(character, cast, refs_dir, edge=edge)
+        if getattr(provider, "kind", "") == "cloud":
+            # 云端 TTS 直接吃音色 id，不需要参考音文件
+            ref = unit.get("voice") or (cast or {}).get("voices", {}).get(character, "")
+        else:
+            ref = resolve_reference(character, cast, refs_dir, edge=edge)
         tmp_path = seg_path + ".part"
         provider.synthesize(
             text,
