@@ -30,7 +30,7 @@ except ImportError as exc:  # pragma: no cover
     log.info(f"缺少依赖：{exc}（需要 jieba / pypinyin）")
     raise SystemExit(1)
 
-from novelcast.config_manager import Config
+from novelcast.config_manager import get_config
 from novelcast.pronunciation import DEFAULT_PATH, load_mapping
 
 
@@ -136,7 +136,7 @@ def main():
         log.info(f"- {c['word']}: {chars}\n  上下文：{c['context']}")
 
     if args.llm:
-        config = Config()
+        config = get_config()
         chosen = ask_llm(cands, config)
         if not chosen:
             log.info("LLM 没有返回可用结果")
