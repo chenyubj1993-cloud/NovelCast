@@ -51,6 +51,7 @@ NovelCast/
 pip install -e ".[dev]"          # 轻量依赖；torch / IndexTTS 运行时另装
 novelcast doctor                 # 检查依赖、CUDA、模型目录
 novelcast run input/全职高手.epub -n 2 --dry-run   # 先看计划：字数/段数/预计时长
+novelcast run input/全职高手.epub -n 1 --tts edge  # 不装模型先跑通（在线 edge 音色）
 novelcast run input/全职高手.epub -n 2 -o output/全职高手
 ```
 
@@ -396,34 +397,55 @@ llm_raw_responses/
 - 提示词里的角色表是「参考名单」，LLM 仍可能输出表外角色；表外角色统一回落到旁白音色，并在日志中列出。
 - 中文省略主语的连续对话仍可能标错说话人，建议先跑 `--split-only` 检查 `*_readable.txt`。
 
-## 本地 TTS（IndexTTS-2，可选）
+## 本地 TTS（IndexTTS-2.5，可选）
 
-云端 TTS（mimoai）需要联网和 key；本仓库另外接了本地 IndexTTS-2：8GB 显存可跑、零样本克隆音色、支持情绪文本。
+本地推理需要一张 8GB 左右的 NVIDIA 显卡。没有显卡就用 `--tts edge`（免费在线，需联网），整条流水线一样能跑通。
 
-### 准备
+### 准备（一次性）
 
-- 模型放在 `models/IndexTTS-2/`（`gpt.pth`、`s2mel.pth`、`qwen0.6bemo4-merge/`、`config.yaml` 等，约 4.6GB）
-- 依赖在 `.vendor/`（torch 2.11.0+cu128、transformers 4.52.1、soundfile 0.14 等），运行前设置 `PYTHONPATH=D:\code\NovelCast\.vendor`
-- 角色参考音由 edge-tts 自动生成到 `output/_refs/<角色>.mp3`，也可以换成真人录音
+```bash
+# 1. 本项目
+pip install -e ".[dev]"
 
-### 用法 A：单独合成某章剧本
+# 2. IndexTTS 源码（本项目只 import，不修改它）
+git clone https://github.com/index-tts/index-tts third_party/index-tts
 
-```powershell
-$env:PYTHONPATH = "D:\code\NovelCast\.vendor"
-python novelcast/local_tts.py "output/全职高手_有声书/002_第0002章 C区47号_script.json" `
-  -o output/ch2.wav --cast "output/全职高手_有声书/cast.json"
+# 3. PyTorch（按显卡选 CUDA 版本；RTX 50 系 / Blackwell 需要 cu128）
+pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu128
+
+# 4. IndexTTS 运行时依赖
+pip install transformers==4.52.1 tokenizers==0.21.0 accelerate librosa \
+            numba==0.63.0 llvmlite==0.46.0 soundfile soxr descript-audiotools \
+            modelscope jieba cn2an omegaconf
+
+# 5. 模型权重（约 5.1GB）
+modelscope download --model IndexTeam/IndexTTS-2.5 --local_dir models/IndexTTS-2.5
+# 或：huggingface-cli download IndexTeam/IndexTTS-2.5 --local-dir models/IndexTTS-2.5
 ```
 
-### 用法 B：接入整条流水线
+> 版本坑：`numba` 与 `llvmlite` 必须配对（0.63.0 ↔ 0.46.0），`soundfile` 需要平台 wheel（Windows 用 `soundfile==0.14.0`）。
 
-在 `config/settings.json` 中设置 `"tts": {"provider": "indextts2"}`，之后照常运行 `novelcast run input/xxx.epub -n 2`；阶段 2 会自动走本地 TTS，并跳过已存在的章节音频。
+### 接入流水线
+
+`config/settings.json`：
+
+```json
+"tts": {
+  "provider": "indextts2",
+  "model_version": "2.5",
+  "indextts_model_dir": "models/IndexTTS-2.5"
+}
+```
+
+之后 `novelcast run input/xxx.epub -n 2`，阶段 2 自动走本地 TTS，已合成的章节会跳过。
 
 ### 性能与注意
 
 - RTX 5060 Laptop 8GB 实测 RTF ≈ 1.1–1.9（1 秒音频约需 1–2 秒），首次加载模型约 1–2 分钟，同进程内复用
-- IndexTTS-2 输出 22.05kHz，本项目拼接时统一重采样到 24kHz
+- IndexTTS 输出 22.05kHz，本项目拼接时统一重采样到 24kHz
 - 单段音频缓存在 `output/_segments/seg_XXXX.wav`，重跑只补缺失段
-- 情绪字段（`emotion`）会作为 `emo_text` 传给 IndexTTS-2；「平静」不传
+- 情绪字段（`emotion`）会作为 `emo_text` 传给 IndexTTS；「平静」不传
+- Windows 上合成期间会调用 `SetThreadExecutionState` 防休眠，其它平台自动跳过
 
 ### IndexTTS-2.5：多音字与语速
 

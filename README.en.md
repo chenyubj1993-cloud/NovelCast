@@ -43,6 +43,18 @@ modelscope download --model IndexTeam/IndexTTS-2.5 --local_dir models/IndexTTS-2
 
 Expected files include `gpt.pth`, `s2mel.pth`, `codec.pth`, `config.yaml` and the `qwen0.6bemo4-merge/` emotion encoder. The weights are licensed separately from this repo — check the model card before commercial use.
 
+Local synthesis also needs the IndexTTS source tree and a CUDA build of PyTorch:
+
+```bash
+git clone https://github.com/index-tts/index-tts third_party/index-tts
+pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu128   # RTX 50 / Blackwell
+pip install transformers==4.52.1 tokenizers==0.21.0 accelerate librosa \
+            numba==0.63.0 llvmlite==0.46.0 soundfile soxr descript-audiotools \
+            modelscope jieba cn2an omegaconf
+```
+
+No GPU? Use `--tts edge` (free, online) — the whole pipeline works without any local model.
+
 ## Quick start
 
 ```bash

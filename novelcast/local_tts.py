@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 import re
+import sys
 import time
 
 from novelcast.log import log
@@ -378,7 +379,9 @@ def concat_segments(seg_paths, output_wav, characters=None, silence=None,
 
 
 def _keep_awake(enable):
-    """合成期间阻止系统休眠（长时间本地推理容易被睡眠打断）。"""
+    """合成期间阻止系统休眠（仅 Windows 有 API；其它平台直接跳过）。"""
+    if sys.platform != "win32":
+        return
     try:
         import ctypes
 
