@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import sys
 from pathlib import Path
 
@@ -128,12 +129,30 @@ def cmd_doctor(args) -> int:
         pass
 
     config = ConfigManager(args.config)
-    model_dir = Path(config.tts.indextts_model_dir)
-    log.info(f"  模型目录：{model_dir} {'✅' if model_dir.exists() else '❌ 不存在'}")
-    if not model_dir.exists():
+    tts = config.config["tts"]
+    provider = tts.get("provider", "edge")
+    log.info(f"  TTS provider：{provider}")
+
+    if provider.startswith("indextts2"):
+        model_dir = Path(config.tts.indextts_model_dir)
+        log.info(f"  模型目录：{model_dir} {'✅' if model_dir.exists() else '❌ 不存在'}")
+        if not model_dir.exists():
+            ok = False
+            log.info("     参考 README「模型准备」把权重下载到该目录；或先用 --tts edge 跑通")
+    elif provider in ("openai", "cloud"):
+        key = tts.get("cloud_api_key") or os.environ.get("OPENAI_API_KEY", "")
+        log.info(f"  云端 key：{'✅ 已配置' if key else '❌ 未配置（cloud_api_key / OPENAI_API_KEY）'}")
+        ok = ok and bool(key)
+    elif provider == "edge":
+        log.info("  ✅ edge 不需要本地模型与 key")
+
+    llm = config.config.get("llm_api", {})
+    if not (llm.get("api_key") or os.environ.get("NOVELCAST_LLM_KEY")):
+        log.info("  ❌ LLM api_key 未配置：对话分割需要它（config/settings.json 的 llm_api.api_key）")
         ok = False
-        log.info("     参考 README「模型准备」把权重下载到该目录")
-    log.info(f"  TTS provider：{config.config['tts']['provider']}")
+    if not llm.get("base_url"):
+        log.info("  ❌ LLM base_url 为空")
+        ok = False
     return 0 if ok else 1
 
 

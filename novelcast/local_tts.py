@@ -345,39 +345,44 @@ def concat_segments(seg_paths, output_wav, characters=None, silence=None,
         chunks.append(data)
         seg_secs.append(len(data) / float(sample_rate))
 
-    merged = np.concatenate(chunks) if chunks else np.zeros(1, dtype="float32")
+    # 先合出完整时间线（含停顿）再测响度：否则增益没把静音算进去，
+    # 自检里的 "LUFS" 也只是目标值而不是实测值。
+    timeline = []
+    for idx, data in enumerate(chunks):
+        timeline.append(data)
+        if idx >= len(chunks) - 1:
+            continue
+        if silence is not None:
+            gap = silence
+        else:
+            a = characters[idx] if characters and idx < len(characters) else "旁白"
+            b = characters[idx + 1] if characters and idx + 1 < len(characters) else "旁白"
+            gap = silence_dialogue if (a != "旁白" and b != "旁白") else silence_narration
+        timeline.append(np.zeros(int(sample_rate * gap), dtype="float32"))
+
+    merged = np.concatenate(timeline) if timeline else np.zeros(1, dtype="float32")
     loud = _measure_loudness(merged, sample_rate)
     gain = 10.0 ** ((target_lufs - loud) / 20.0) if loud > -70 else 1.0
     peak = float(np.abs(merged).max()) if merged.size else 0.0
     if peak > 0 and peak * gain > 0.95:
         gain = 0.95 / peak
 
+    final = np.clip(merged * gain, -1.0, 1.0)
     tmp_wav = output_wav + ".part"
     with wave.open(tmp_wav, "wb") as out:
         out.setnchannels(1)
         out.setsampwidth(2)
         out.setframerate(sample_rate)
-        for idx, data in enumerate(chunks):
-            pcm = np.clip(data * gain, -1.0, 1.0)
-            out.writeframes((pcm * 32767.0).astype("<i2").tobytes())
-            if idx >= len(chunks) - 1:
-                continue
-            if silence is not None:
-                gap = silence
-            else:
-                a = characters[idx] if characters and idx < len(characters) else "旁白"
-                b = characters[idx + 1] if characters and idx + 1 < len(characters) else "旁白"
-                gap = silence_dialogue if (a != "旁白" and b != "旁白") else silence_narration
-            out.writeframes(b"\x00\x00" * int(sample_rate * gap))
+        out.writeframes((final * 32767.0).astype("<i2").tobytes())
     os.replace(tmp_wav, output_wav)  # 原子落盘：中途被杀不会留下半截成品
     if stats is not None:
         stats.update({
-            "duration": len(merged) / float(sample_rate),
+            "duration": len(final) / float(sample_rate),
             "segments": len(chunks),
             "max_segment": max(seg_secs) if seg_secs else 0.0,
-            "lufs": target_lufs,
+            "lufs": _measure_loudness(final, sample_rate),
             "gain_db": 20.0 * np.log10(gain) if gain > 0 else 0.0,
-            "peak": float(np.abs(np.concatenate(chunks) * gain).max()) if chunks else 0.0,
+            "peak": float(np.abs(final).max()) if final.size else 0.0,
         })
     return output_wav
 

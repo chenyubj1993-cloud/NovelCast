@@ -37,8 +37,8 @@ def test_silence_by_speaker_and_loudness():
         assert abs(actual - expected) < 0.02, (actual, expected)
         assert stats["segments"] == 3
         assert 0 < stats["peak"] <= 0.9501
-        # stats 记录的是目标响度，默认 -18 LUFS（峰值保护下 -16 到不了）
-        assert stats["lufs"] == -18.0
+        # stats 记录实测响度：包含静音后与目标 -18 LUFS 允许小偏差
+        assert -19.5 < stats["lufs"] < -16.5, stats["lufs"]
         assert abs(stats["gain_db"]) > 1e-3
 
 

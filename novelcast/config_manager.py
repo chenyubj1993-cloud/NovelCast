@@ -36,9 +36,9 @@ DEFAULT_CONFIG = {
 
     # LLM API配置（用于对话分割）
     "llm_api": {
-        "base_url": "https://api.mimoai.com/v1",
+        "base_url": "https://api.deepseek.com",
         "api_key": "",  # 需要用户配置
-        "model": "mimo-v2.5-pro",
+        "model": "deepseek-chat",
     },
 
     # TTS API配置（用于语音合成）
@@ -71,7 +71,7 @@ DEFAULT_CONFIG = {
 
     # TTS配置
     "tts": {
-        "provider": "mimoai",  # mimoai | indextts2 | edge
+        "provider": "edge",  # edge | indextts2 | indextts2.5 | openai（默认 edge：开箱即用，不需要下载模型）
         "max_chars": 300,  # 单次TTS最大字符数
         "min_chars": 2,  # 最小字符数，低于此值跳过
         "sample_rate": 24000,

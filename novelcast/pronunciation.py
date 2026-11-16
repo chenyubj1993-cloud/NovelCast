@@ -97,5 +97,7 @@ def apply_pronunciation(text: str, words: dict | None = None) -> str:
 def enabled_for(config) -> bool:
     data = getattr(config, "config", config) or {}
     tts = data.get("tts", {}) if isinstance(data, dict) else {}
+    provider = str(tts.get("provider") or "")
     version = str(tts.get("model_version") or "")
-    return version.startswith("2.5")
+    # 标注语法只有本地 IndexTTS-2.5 认识；edge/云端会把 "<字|PINYIN>" 原样念出来
+    return provider.startswith("indextts2") and version.startswith("2.5")

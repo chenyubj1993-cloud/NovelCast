@@ -1,14 +1,14 @@
 {
   "output_dir": "output",
   "llm_api": {
-    "base_url": "https://api.mimoai.com/v1",
+    "base_url": "https://api.deepseek.com",
     "api_key": "your_llm_api_key_here",
-    "model": "mimo-v2.5-pro"
+    "model": "deepseek-chat"
   },
   "tts_api": {
-    "base_url": "https://api.mimoai.com/v1",
-    "api_key": "your_tts_api_key_here",
-    "model": "mimo-v2.5-pro"
+    "base_url": "",
+    "api_key": "",
+    "model": ""
   },
   "generation": {
     "chunk_size": 1500,
@@ -25,7 +25,7 @@
     "tts_rpm": 60
   },
   "tts": {
-    "provider": "indextts2",
+    "provider": "edge",
     "max_chars": 300,
     "min_chars": 2,
     "sample_rate": 24000,

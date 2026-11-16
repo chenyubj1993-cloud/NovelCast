@@ -351,17 +351,24 @@ def build_provider(config, name=None):
     """按配置构建 TTS 提供方。config 为 config_manager.Config 实例或 dict。"""
     data = getattr(config, "config", config) or {}
     tts_cfg = data.get("tts", {}) if isinstance(data, dict) else {}
-    name = name or tts_cfg.get("provider") or "indextts2"
+    name = name or tts_cfg.get("provider") or "edge"
     if name == "edge":
-        return EdgeTTSProvider(voice_map=tts_cfg.get("edge_voice_map"))
+        # edge 的 rate 是百分比（+10% = 快 10%），duration_factor 是倍率（0.9 = 快 10%）
+        df = float(tts_cfg.get("duration_factor") or 1.0)
+        rate = f"{(1.0 / df - 1.0) * 100:+.0f}%" if df and abs(df - 1.0) > 1e-6 else "+0%"
+        return EdgeTTSProvider(voice_map=tts_cfg.get("edge_voice_map"), rate=rate)
     if name in ("openai", "cloud"):
+        df = float(tts_cfg.get("duration_factor") or 1.0)
+        speed = tts_cfg.get("cloud_speed")
+        if speed is None and abs(df - 1.0) > 1e-6:
+            speed = round(1.0 / df, 3)  # 云端 speed 是倍率：1.1 = 快 10%
         return OpenAITTSProvider(
             base_url=tts_cfg.get("cloud_base_url") or os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1"),
             api_key=tts_cfg.get("cloud_api_key") or os.environ.get("OPENAI_API_KEY", ""),
             model=tts_cfg.get("cloud_model") or "gpt-4o-mini-tts",
             response_format=tts_cfg.get("cloud_format", "wav"),
             instructions=tts_cfg.get("cloud_instructions", True),
-            speed=tts_cfg.get("cloud_speed"),
+            speed=speed,
         )
     if name in ("indextts2", "indextts2.5"):
         version = tts_cfg.get("model_version") or ("2.5" if name.endswith("2.5") else "2")
