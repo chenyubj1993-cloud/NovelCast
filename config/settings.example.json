@@ -1,5 +1,6 @@
 {
   "output_dir": "output",
+  "roster_mode": "full",
   "llm_api": {
     "base_url": "https://api.deepseek.com",
     "api_key": "your_llm_api_key_here",
@@ -42,6 +43,8 @@
     "loudness_lufs": -18.0,
     "silence_narration": 0.4,
     "silence_dialogue": 0.15,
+    "max_segment_chars": null,
+    "cloud_concurrency": 4,
     "reference_dir": "output/_refs",
     "edge_voice_map": {},
     "cloud_base_url": "https://api.openai.com/v1",

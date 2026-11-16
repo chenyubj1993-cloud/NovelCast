@@ -117,15 +117,18 @@ novelcast run input/全职高手.epub --chapters 1 --offline --split-only
 
 | 配置项 | 说明 | 默认值 |
 |--------|------|--------|
-| `generation.chunk_size` | 按此字数分块，每块再固定分成llm_concurrency段 | 1500 |
-| `generation.min_split_length` | 递归拆分最小长度（低于此值使用fallback） | 5 |
-| `generation.max_duration_per_file` | 单个音频文件最大时长（秒） | 900 (15分钟) |
-| `generation.silence_between_segments` | 段落间静音时长（秒） | 0.5 |
-| `concurrency.llm_concurrency` | LLM并发数（每个块固定分成几段） | 3 |
-| `concurrency.tts_concurrency` | TTS并发数 | 5 |
-| `tts.min_chars` | TTS最小字符数（低于此值跳过） | 2 |
-| `rate_limit.llm_rpm` | LLM每分钟请求数限制 | 30 |
-| `rate_limit.tts_rpm` | TTS每分钟请求数限制 | 60 |
+| `output_dir` | 输出根目录（`--output` 优先于它） | `output` |
+| `roster_mode` | `full` 先扫全书抽角色；`off` 跳过，边分边认（试听单章更快） | `full` |
+| `generation.chunk_size` | 按此字数分块 | 1500 |
+| `concurrency.llm_concurrency` | 每个块切成几段并发 | 3 |
+| `tts.provider` | `edge` / `indextts2` / `openai` | `edge` |
+| `tts.max_segment_chars` | 单段字数上限；`null` = 按 provider 自动（本地 40，edge/云端 120） | `null` |
+| `tts.cloud_concurrency` | 云端/edge 合成并发数（本地 indextts2 始终串行） | 4 |
+| `tts.duration_factor` | 语速 0.5–2.0，本地 2.5 与 edge/云端都会换算 | 1.0 |
+| `tts.loudness_lufs` | 整章响度目标（LUFS） | -18.0 |
+| `tts.silence_narration` / `tts.silence_dialogue` | 旁白后 / 连续对白的停顿（秒） | 0.4 / 0.15 |
+| `tts.emotion_mode` / `tts.emo_alpha` | 情绪方式（text/vector/off）与强度 | text / 0.55 |
+| `llm_api.model` | 剧本分割用的模型 | `deepseek-chat` |
 
 ### 音色配置
 

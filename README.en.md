@@ -119,6 +119,9 @@ Start from [`config/settings.example.json`](config/settings.example.json), copy 
 
 | Key | Meaning | Default |
 |---|---|---|
+| `roster_mode` | `full` pre-scans the whole book for characters; `off` skips it | `full` |
+| `tts.max_segment_chars` | max chars per TTS segment; `null` = auto (40 local, 120 edge/cloud) | `null` |
+| `tts.cloud_concurrency` | parallel requests for edge/cloud TTS | `4` |
 | `tts.provider` | `mimoai` (cloud), `indextts2` or `edge` | `mimoai` in code; the example file ships `indextts2` |
 | `tts.model_version` | `"2"` or `"2.5"`; 2.5 enables `<字\|拼音>` annotations and duration control | `"2"` |
 | `tts.duration_factor` | 0.5–2.0, smaller is faster | `1.0` |

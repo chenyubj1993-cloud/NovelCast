@@ -48,28 +48,33 @@ async def run_book(
         shutil.rmtree(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # 阶段 0：角色表
+    # 阶段 0：角色表（roster_mode=off 时跳过，试听单章不必先扫全书）
+    roster_mode = str(config.config.get("roster_mode", "full")).lower()
     roster_file = output_dir / "characters.json"
-    roster = None if rebuild_roster else load_roster(roster_file)
-    if roster:
-        log.info(f"\n🎭 复用角色表: {len(roster['characters'])} 个角色（{roster_file.name}）")
-    elif offline:
-        log.info("\n" + "=" * 60)
-        log.info("  阶段0: 离线模式，从已有剧本汇总角色")
-        log.info("=" * 60)
-        roster = _roster_from_scripts(output_dir)
-        save_roster(roster, roster_file)
+    if roster_mode == "off":
+        log.info("\n🎭 roster_mode=off：跳过全书角色表预扫，边分边认角色")
+        roster = {"version": 1, "characters": []}
+        character_map = {}
     else:
-        from novelcast.character_registry import build_roster_async
-        from novelcast.dialogue_splitter import get_async_llm_client
+        roster = None if rebuild_roster else load_roster(roster_file)
+        if roster:
+            log.info(f"\n🎭 复用角色表: {len(roster['characters'])} 个角色（{roster_file.name}）")
+        elif offline:
+            log.info("\n" + "=" * 60)
+            log.info("  阶段0: 离线模式，从已有剧本汇总角色")
+            log.info("=" * 60)
+            roster = _roster_from_scripts(output_dir)
+            save_roster(roster, roster_file)
+        else:
+            from novelcast.character_registry import build_roster_async
+            from novelcast.dialogue_splitter import get_async_llm_client
 
-        log.info("\n" + "=" * 60)
-        log.info("  阶段0: 全书角色抽取")
-        log.info("=" * 60)
-        roster = await build_roster_async(chapters, book_name, get_async_llm_client(), config)
-        save_roster(roster, roster_file)
-
-    character_map = roster_to_prompt_map(roster)
+            log.info("\n" + "=" * 60)
+            log.info("  阶段0: 全书角色抽取")
+            log.info("=" * 60)
+            roster = await build_roster_async(chapters, book_name, get_async_llm_client(), config)
+            save_roster(roster, roster_file)
+        character_map = roster_to_prompt_map(roster)
 
     # 阶段 1：分割
     success_results, failed_results = await split_all_chapters(

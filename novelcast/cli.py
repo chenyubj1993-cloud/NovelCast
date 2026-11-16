@@ -48,6 +48,8 @@ def cmd_run(args) -> int:
         duration_factor=args.speed,
         emotion_mode=args.emotion_mode,
     )
+    if args.roster:
+        config.config["roster_mode"] = args.roster
 
     book_name, content = read_novel(args.input)
     chapters = split_chapters(content)
@@ -179,6 +181,11 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--chapters", help="章节号，如 1,3,5-7")
     r.add_argument("--first-chars", type=int, help="每章只取前 N 字（试听）")
     r.add_argument("--tts", choices=["indextts2", "edge", "openai", "mimoai"], help="TTS 引擎")
+    r.add_argument(
+        "--roster",
+        choices=["full", "off"],
+        help="是否先扫全书抽角色；off 跳过预扫，试听单章更快",
+    )
     r.add_argument(
         "--format",
         choices=["wav", "m4b"],

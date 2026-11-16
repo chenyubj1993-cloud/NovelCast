@@ -32,7 +32,8 @@ LLM_RAW_DIR.mkdir(exist_ok=True)
 # ============================================================
 DEFAULT_CONFIG = {
     # 输出根目录（相对路径按项目根解析；每本书会建「<书名>_有声书」子目录）
-    "output_dir": "output",
+    "output_dir": "output",  # 输出根目录（--output 优先于它，相对路径按项目根解析）
+    "roster_mode": "full",  # full | off：off 跳过全书角色表预扫，边分边认角色（试听单章更快）
 
     # LLM API配置（用于对话分割）
     "llm_api": {
@@ -88,6 +89,8 @@ DEFAULT_CONFIG = {
         "loudness_lufs": -18.0,  # 整章响度目标（LUFS）
         "silence_narration": 0.4,  # 旁白后停顿（秒）
         "silence_dialogue": 0.15,  # 连续对白之间停顿（秒）
+        "max_segment_chars": None,  # 单段上限；None = 按 provider 自动（本地 2.5 为 40，edge/云端 120）
+        "cloud_concurrency": 4,  # 云端/edge 合成并发数（本地 indextts2 始终串行，显存不够）
         "reference_dir": "output/_refs",
         "edge_voice_map": {},
         # 云端 TTS（OpenAI 兼容的 /audio/speech）
@@ -224,7 +227,7 @@ class RateLimitConfig:
 @dataclass
 class TtsConfig:
     """TTS配置"""
-    provider: str = "mimoai"
+    provider: str = "edge"
     max_chars: int = 300
     min_chars: int = 2
     sample_rate: int = 24000
@@ -241,6 +244,8 @@ class TtsConfig:
     loudness_lufs: float = -18.0
     silence_narration: float = 0.4
     silence_dialogue: float = 0.15
+    max_segment_chars: Optional[int] = None
+    cloud_concurrency: int = 4
     reference_dir: str = "output/_refs"
     edge_voice_map: dict = field(default_factory=dict)
     cloud_base_url: str = ""

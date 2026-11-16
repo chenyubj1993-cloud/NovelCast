@@ -10,7 +10,9 @@ import json
 import os
 import re
 import sys
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from novelcast.log import log
 from novelcast.pronunciation import (
@@ -163,6 +165,18 @@ def _sha1(text):
     return hashlib.sha1(text.encode("utf-8")).hexdigest()
 
 
+def resolve_max_segment_chars(config=None, provider=None) -> int:
+    """单段上限：显式配置优先；否则本地 2.5 用 40（low_vram 内部还会再切），edge/云端用 120。"""
+    tts = {}
+    if config is not None:
+        tts = (getattr(config, "config", {}) or {}).get("tts", {}) or {}
+    explicit = tts.get("max_segment_chars")
+    if explicit:
+        return max(10, int(explicit))
+    name = getattr(provider, "name", "") or str(tts.get("provider", "edge"))
+    return 40 if name.startswith("indextts2") else 120
+
+
 def _load_manifest(work_dir):
     path = os.path.join(work_dir, MANIFEST_NAME)
     try:
@@ -219,7 +233,8 @@ def synthesize_lines(
     manifest = {"version": 1, "items": {}} if restart else _load_manifest(work_dir)
     total = len(lines) if not limit else min(limit, len(lines))
 
-    # 先把每行展开成 <=MAX_SEGMENT_CHARS 的小段：长旁白一次合成会非常慢（实测单段可达 900–1700s）
+    # 先把每行展开成 <=max_chars 的小段：长旁白一次合成会非常慢（实测单段可达 900–1700s）
+    max_chars = resolve_max_segment_chars(config, provider)
     use_pron = _pron_enabled(config)
     pron_ver = _pron_version() if use_pron else ""
     if use_pron and pron_ver != "none":
@@ -232,7 +247,7 @@ def synthesize_lines(
         character = line.get("character") or "旁白"
         emotion = line.get("emotion") or ""
         voice = line.get("voice_id") or (cast or {}).get("voices", {}).get(character, "")
-        for part in split_text_for_tts(text):
+        for part in split_text_for_tts(text, max_chars=max_chars):
             units.append(
                 {
                     "text": apply_pronunciation(part) if use_pron else part,
@@ -258,6 +273,7 @@ def synthesize_lines(
         getattr(provider, "emotion_mode", ""),
         getattr(provider, "emo_alpha", ""),
     )
+    pending = []
     for k, unit in enumerate(units):
         text = unit["text"]
         character = unit["character"]
@@ -276,28 +292,64 @@ def synthesize_lines(
             cached += 1
             done[k] = seg_path
             continue
+        unit["_key"] = key
+        unit["_seg"] = seg_path
+        pending.append((k, unit))
+
+    lock = threading.Lock()
+    ref_lock = threading.Lock()
+
+    def _run_one(item):
+        k, unit = item
+        character = unit["character"]
+        emotion = unit["emotion"]
         if getattr(provider, "kind", "") == "cloud":
             # 云端 TTS 直接吃音色 id，不需要参考音文件
             ref = unit.get("voice") or (cast or {}).get("voices", {}).get(character, "")
         else:
-            ref = resolve_reference(character, cast, refs_dir, edge=edge)
+            with ref_lock:  # 多个线程同时给同一角色生成参考音会写出半截文件
+                ref = resolve_reference(character, cast, refs_dir, edge=edge)
+        seg_path = unit["_seg"]
         tmp_path = seg_path + ".part"
         provider.synthesize(
-            text,
+            unit["text"],
             ref,
             tmp_path,
             emotion=emotion if emotion not in ("", "平静", "neutral") else None,
         )
         os.replace(tmp_path, seg_path)  # 原子替换，避免半截 wav 被当成完成
-        manifest["items"][str(k)] = {"sha": key, "character": character, "emotion": emotion}
-        _save_manifest(work_dir, manifest)
-        done[k] = seg_path
+        with lock:
+            manifest["items"][str(k)] = {
+                "sha": unit["_key"], "character": character, "emotion": emotion,
+            }
+            _save_manifest(work_dir, manifest)
+            done[k] = seg_path
         if verbose:
-            log.info(f"  [{k + 1}/{len(units)}] {character} | {unit.get('raw', text)[:20]} -> {os.path.getsize(seg_path) // 1024}KB {time.time() - t0:.0f}s")
+            log.info(
+                f"  [{k + 1}/{len(units)}] {character} | {unit.get('raw', unit['text'])[:20]}"
+                f" -> {os.path.getsize(seg_path) // 1024}KB {time.time() - t0:.0f}s"
+            )
+        return k
+
+    tts_conf = (getattr(config, "config", {}) or {}).get("tts", {}) or {}
+    parallel = int(tts_conf.get("cloud_concurrency", 4) or 4)
+    kind = getattr(provider, "kind", "")
+    can_parallel = kind == "cloud" or getattr(provider, "name", "") == "edge"
+    workers = max(1, min(parallel, len(pending))) if can_parallel else 1
+
+    if workers > 1:
+        log.info(f"  ⚡ 并发合成：{workers} 路（{kind or 'edge'}）")
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = [pool.submit(_run_one, item) for item in pending]
+            for fut in as_completed(futures):
+                fut.result()
+    else:
+        for item in pending:
+            _run_one(item)
     if verbose and cached:
         log.info(f"  ♻️ 断点续跑：复用 {cached}/{len(units)} 段缓存，本次合成 {len(units) - cached} 段")
     if verbose and len(units) > total:
-        log.info(f"  ✂️ 长句拆分：{total} 行 -> {len(units)} 段（单段上限 {MAX_SEGMENT_CHARS} 字）")
+        log.info(f"  ✂️ 长句拆分：{total} 行 -> {len(units)} 段（单段上限 {max_chars} 字）")
     return done
 
 
