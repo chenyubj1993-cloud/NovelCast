@@ -1,5 +1,7 @@
 # NovelCast - 多角色有声书生成器
 
+[![CI](https://github.com/chenyubj1993-cloud/NovelCast/actions/workflows/ci.yml/badge.svg)](https://github.com/chenyubj1993-cloud/NovelCast/actions/workflows/ci.yml)
+
 把小说自动拆成「旁白 / 角色对白 + 情绪」，为每个角色分配固定音色，逐段合成音频并合并成有声书。
 名字取自 Novel + Cast（角色阵容）。
 
