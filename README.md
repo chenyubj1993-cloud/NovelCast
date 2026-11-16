@@ -5,9 +5,9 @@
 
 ## 工作流程
 
-1. **阶段 0 · 全书角色表**：分片读全书，抽取角色（姓名、别名、性别、年龄、身份），写入 `output/<书名>/characters.json`，作为后续标注的枚举约束。
+1. **阶段 0 · 全书角色表**：分片读全书，抽取角色（姓名、别名、性别、年龄、身份），写入 `output/<书名>_有声书/characters.json`，作为后续标注的枚举约束。
 2. **阶段 1 · 剧本标注**：按块并发调用 LLM，把正文拆成 `{character, text, emotion}`；提示词带上角色表，减少「同一个人换了称呼就变成新角色」。
-3. **全书音色表**：`output/<书名>/cast.json` 一次性给所有角色分配音色（旁白固定、同性别尽量不撞音、别名复用同一音色）。
+3. **全书音色表**：`output/<书名>_有声书/cast.json` 一次性给所有角色分配音色（旁白固定、同性别尽量不撞音、别名复用同一音色）。
 4. **阶段 2 · TTS**：逐段合成并按章节合并；默认不清空输出，已生成的章节和片段自动跳过，可断点续跑。
 
 ## 项目结构
@@ -28,10 +28,13 @@ NovelCast/
 │   ├── pronunciation.py       # 多音字标注（<字|拼音>）
 │   ├── script_qa.py           # 剧本对齐与自动修复
 │   ├── engine.py              # 阶段函数（分割 / 合成 / 编排，CLI 与旧脚本共用）
+│   ├── m4b.py                 # 逐章 WAV → 带章节的 M4B（ffmpeg）
+│   ├── emotion_review.py      # 情绪补标（LLM 只改中性行）
+│   ├── log.py                 # 统一日志
 │   └── utils.py               # 时长工具
 ├── scripts/                    # 独立脚本（音色库 / 抓数据 / 修复 / 发音）
-├── tests/                      # pytest 单测（45 个）
-├── tools/dev/                  # 开发工具（假 TTS 服务）
+├── tests/                      # pytest 单测（54 个）
+├── tools/dev/                  # 开发工具（fake_tts_server.py）
 ├── .github/workflows/ci.yml    # GitHub Actions
 ├── config/
 │   ├── settings.json          # 主配置（含密钥，不提交）
@@ -52,6 +55,7 @@ novelcast doctor                 # 检查依赖、CUDA、模型目录
 novelcast run input/全职高手.epub -n 2 --dry-run   # 先看计划：字数/段数/预计时长
 novelcast run input/全职高手.epub -n 1 --tts edge  # 不装模型先跑通（在线 edge 音色）
 novelcast run input/全职高手.epub -n 2 -o output/全职高手
+novelcast run input/全职高手.epub -n 2 --format m4b   # 导出带章节的 M4B（需要 ffmpeg）
 ```
 
 - 全部参数见 `novelcast run --help`；`--tts edge` 可以不下载模型先跑通整条流程。
@@ -72,19 +76,20 @@ cp config/settings.example.json config/settings.json
 ```json
 {
   "llm_api": {
-    "base_url": "https://api.mimoai.com/v1",
-    "api_key": "你的LLM API密钥",
-    "model": "mimo-v2.5-pro"
+    "base_url": "https://api.deepseek.com",
+    "api_key": "你的 DeepSeek API Key",
+    "model": "deepseek-chat"
   },
   "tts_api": {
-    "base_url": "https://api.mimoai.com/v1",
-    "api_key": "你的TTS API密钥",
-    "model": "mimo-v2.5-pro"
+    "base_url": "",
+    "api_key": "",
+    "model": ""
   }
 }
 ```
 
-> **注意**：LLM和TTS的API配置是分开的，可以使用不同的服务商和密钥。如果你使用同一个服务商，可以填相同的URL和密钥。
+> **注意**：默认 `tts.provider = edge`，用微软在线语音，不需要 TTS key；`tts_api` 只在旧的 mimoai 路径下才用。
+> LLM 只用于剧本分割，默认 DeepSeek（OpenAI 兼容）。
 
 ### 2. 检查环境
 
@@ -121,7 +126,7 @@ novelcast run input/全职高手.epub --chapters 1 --offline --split-only
 | `roster_mode` | `full` 先扫全书抽角色；`off` 跳过，边分边认（试听单章更快） | `full` |
 | `generation.chunk_size` | 按此字数分块 | 1500 |
 | `concurrency.llm_concurrency` | 每个块切成几段并发 | 3 |
-| `tts.provider` | `edge` / `indextts2` / `openai` | `edge` |
+| `tts.provider` | `edge` / `indextts2` / `openai` / `mimoai`（旧） | `edge` |
 | `tts.max_segment_chars` | 单段字数上限；`null` = 按 provider 自动（本地 40，edge/云端 120） | `null` |
 | `tts.cloud_concurrency` | 云端/edge 合成并发数（本地 indextts2 始终串行） | 4 |
 | `tts.duration_factor` | 语速 0.5–2.0，本地 2.5 与 edge/云端都会换算 | 1.0 |
@@ -191,44 +196,20 @@ python scripts/build_voice_bank.py data\ws4tts --count 28 --style broadcast `
 
 > 许可：AISHELL-3 是 Apache-2.0，可商用；Emilia（CC BY-NC 4.0）、WenetSpeech（申请制非商用）只能自己用。真人声音还涉及声音权，公开发布前请确认授权。
 
-## 人物映射功能
+## 角色一致性（characters.json + cast.json）
 
-### 问题背景
-由于小说会被分割成多个chunk分别处理，可能会出现以下问题：
-1. 同一个人物在不同chunk中被分配不同的音色
-2. LLM错误地将描述性词语（如"些调皮地"、"没好气地"）当作角色名
-3. 代词（如"他"、"我"）被当作角色处理
+早期版本靠一条进程内的「全局人物映射表」在分块之间传递角色，但它在阶段 0 之前就调用了，实际总是空的。现在改成两级持久化：
 
-### 解决方案
+- **characters.json（阶段 0）**：先扫全书，抽出角色名、别名、性别、年龄、身份，作为阶段 1 提示词里的枚举——模型只能从这份表里选人，减少「同一人换个称呼就变成新角色」。
+- **cast.json（阶段 1 之后）**：一次性给全书角色分配音色，重跑默认复用；加 `--rebuild-cast` 才会重新分配。
 
-#### 1. 全局人物映射表
-- 第一次分割后自动建立人物映射表
-- 后续分割时传入已知映射，保持一致性
-- 映射表在生成新书时自动清空
-
-#### 2. 角色名验证
-系统会自动过滤以下无效角色名：
-- **代词**：他、她、它、我、你、我们、他们
-- **描述性词语**：些调皮地、没好气地、开心地、生气地
-- **动作描述**：说、道、喊、问、笑、哭
-
-#### 3. 改进的提示词
-LLM提示词中明确说明了角色识别规则，减少错误识别。
-
-### 查看人物映射
-生成完成后，系统会打印全局人物映射表：
-```
-🎭 全局人物映射表:
-   小明 -> 冰糖
-   妈妈 -> 茉莉
-   爸爸 -> 苏打
-   老师 -> 白桦
-```
+两者都落在 `output/<书名>_有声书/` 下，跨章节、跨进程都能保持一致。只想试听一章时可以用 `roster_mode: "off"`（或 `--roster off`）跳过阶段 0。
 
 ### 检查角色表
+
 ```bash
 novelcast run input/某本书.epub --split-only
-# 然后看 output/某本书_有声书/characters.json
+cat output/某本书_有声书/characters.json
 ```
 
 ## 输出结构
@@ -236,47 +217,32 @@ novelcast run input/某本书.epub --split-only
 ```
 output/
 └── {书名}_有声书/
-    ├── 001_章节标题.wav          # 章节音频（按时长切分）
-    ├── 001_章节标题_part02.wav   # 超过15分钟会自动切分
-    ├── 001_章节标题_script.json  # 对话脚本（用于字幕）
-    ├── 002_章节标题.wav
-    └── ...
-
-llm_raw_responses/
-└── {书名}/
-    ├── chapter_001/
-    │   ├── block001_seg000.json              # LLM原始响应（按块_段组织）
-    │   ├── block001_seg000_readable.txt      # 可读文本（方便对照检查）
-    │   ├── block001_seg001.json
-    │   └── ...
-    └── chapter_002/
-        └── ...
+    ├── characters.json           # 全书角色表
+    ├── cast.json                 # 角色 → 音色
+    ├── 001_章节标题_script.json   # 对话脚本（character/text/emotion）
+    ├── 001_章节标题_readable.txt  # 剧本人读版（带情绪）
+    ├── 001_章节标题.wav           # 章节音频（24kHz/16bit/单声道）
+    └── _temp_001/segments.json   # 分段缓存（--keep-segments 时保留）
 ```
+
+可选产物：
+
+- `--format m4b`：`{书名}.m4b`，带章节标记，需要系统里有 ffmpeg。
+- `llm_cache/<书名>/`：LLM 分割结果缓存，重跑同一个块直接命中。
 
 ### 可读文本格式
 
-`*_readable.txt` 文件提供清晰的对照格式：
+`*_readable.txt` 是给人核对剧本用的：
 
 ```
-=== 第一章 相遇_block001_seg000 ===
-解析时间: 2026-05-22 12:29:30
-
-共 11 段:
+=== 第一章 相遇 ===
 
   1. [旁白] 小明走在放学的路上，看到妈妈在门口等他。
   2. [旁白] 小明开心地喊道
      情绪: happy
   3. [小明] 妈妈，我回来了！
      情绪: happy
-  4. [妈妈] 今天在学校怎么样？
-     情绪: happy
-  ...
 ```
-
-**用途**：
-- 快速检查LLM分割是否正确
-- 对照原文查看是否有遗漏
-- 验证角色识别是否准确
 
 ## 模块说明
 
@@ -340,13 +306,13 @@ llm_raw_responses/
 
 | 特性 | 原版本 | 模块化版本 |
 |------|--------|------------|
-| 代码组织 | 单文件1711行 | 7个独立模块 |
+| 代码组织 | 单文件 1711 行 | novelcast 包（17 个模块） |
 | 配置管理 | 硬编码 | JSON配置文件 |
 | 角色一致性 | 每章独立分配音色 | 全书角色表 + cast.json |
 | 断点续跑 | 每次清空输出 | 剧本/音频/LLM 缓存三级复用 |
 | 输出组织 | 按时间戳 | 按书名/章节 |
 | 章节处理 | 全文处理 | 逐章处理 |
-| 时长控制 | 无限制 | 自动切分（默认15分钟） |
+| 时长控制 | 无限制 | 逐章输出，可导出 M4B |
 | LLM响应 | 不保存 | 按书名/章节保存 |
 | 可扩展性 | 差 | 良好 |
 
@@ -378,7 +344,7 @@ llm_raw_responses/
 - 重跑时只有 `sha1(text + character + emotion)` 一致、且 wav 能正常打开的分段才复用，改了台词或换了音色会自动重合成；
 - 所有分段齐了才拼接整章，整章 wav 同样先写 `.part` 再替换，已存在的整章音频直接跳过；
 - 因此 Ctrl+C、断电、关机后重跑同一条命令即可，日志会打印 `♻️ 断点续跑：复用 N/M 段缓存`。
-- 合成时会把超过 40 字的行自动按句号/问号/分号再切（单句仍超长时按逗号，最后硬切），日志打印 `✂️ 长句拆分：74 行 -> 113 段`；切分无损，不改变剧本文件。上限设为 40 是为了避开 IndexTTS 在 8GB 显存下的 low-VRAM 内部切分（`infer_v2_5.py` 会对 >40 字的文本自行再切并插入 200ms 静音），否则一句中间会莫名停顿。
+- 合成时会把超过单段上限的行自动按句号/问号/分号再切（单句仍超长时按逗号，最后硬切），日志打印 `✂️ 长句拆分：74 行 -> 113 段`；切分无损，不改变剧本文件。上限设为 40 是为了避开 IndexTTS 在 8GB 显存下的 low-VRAM 内部切分（`infer_v2_5.py` 会对 >40 字的文本自行再切并插入 200ms 静音），否则一句中间会莫名停顿。
 - 整章成功落盘后默认删除 `_temp_XXX/` 分段缓存（可省约一半磁盘）；需要保留缓存重跑时加 `--keep-segments`。中途失败不会清理，保证可续跑。
 
 > 说明：IndexTTS-2 是串行推理，8GB 显存下无法并行多段；"续跑"解决的是中断后不白跑，而不是提升单章速度。
@@ -387,17 +353,17 @@ llm_raw_responses/
 
 | 文件 | 内容 |
 |------|------|
-| `output/<书名>/characters.json` | 全书角色表：`name / aliases / gender / age / role / appearances` |
-| `output/<书名>/cast.json` | 全书音色表：`voices`（角色→音色）与旁白音色 |
-| `output/<书名>/*_script.json` | 每章剧本：`lines[] = {character, text, emotion, voice}` |
-| `output/<书名>/*_partNN.wav` | 最终音频（按时长切分） |
+| `output/<书名>_有声书/characters.json` | 全书角色表：`name / aliases / gender / age / role / appearances` |
+| `output/<书名>_有声书/cast.json` | 全书音色表：`voices`（角色→音色）与旁白音色 |
+| `output/<书名>_有声书/*_script.json` | 每章剧本：`lines[] = {character, text, emotion, voice}` |
+| `output/<书名>_有声书/*.wav` | 章节音频（24kHz/16bit/单声道） |
 
 角色表可以手工编辑后直接重跑（不要加 `--rebuild-roster`）；`cast.json` 里也能把某个角色的音色改成 `voice_presets` 中的任意名字。
 
 ### 已知限制
 
 - 角色表只覆盖本次选中的章节；只选部分章节时，未选章节里的角色不会提前出现。
-- 提示词里的角色表是「参考名单」，LLM 仍可能输出表外角色；表外角色统一回落到旁白音色，并在日志中列出。
+- 提示词里的角色表是「参考名单」，LLM 仍可能输出表外角色；表外角色按名字稳定分配群杂音色，日志里会列出。
 - 中文省略主语的连续对话仍可能标错说话人，建议先跑 `--split-only` 检查 `*_readable.txt`。
 
 ## 云端 TTS（OpenAI 兼容）
