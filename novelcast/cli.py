@@ -54,7 +54,7 @@ def cmd_run(args) -> int:
     if args.first_chapters:
         chapters = chapters[: args.first_chapters]
     if args.first_chars:
-        from scripts.generate import _filter_chapters_content
+        from novelcast.engine import _filter_chapters_content
 
         chapters = _filter_chapters_content(chapters, None, args.first_chars)
     if args.chapters:
@@ -89,6 +89,7 @@ def cmd_run(args) -> int:
             rebuild_roster=args.rebuild_roster,
             rebuild_cast=args.rebuild_cast,
             split_only=args.split_only,
+            audio_format=args.format,
         )
     )
     log.info(f"\n🎉 完成：{len(result['audios'])} 个音频 → {result['output_dir']}")
@@ -178,6 +179,12 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--chapters", help="章节号，如 1,3,5-7")
     r.add_argument("--first-chars", type=int, help="每章只取前 N 字（试听）")
     r.add_argument("--tts", choices=["indextts2", "edge", "openai", "mimoai"], help="TTS 引擎")
+    r.add_argument(
+        "--format",
+        choices=["wav", "m4b"],
+        default="wav",
+        help="输出格式：wav 逐章文件，m4b 合并成带章节的有声书（需要 ffmpeg）",
+    )
     r.add_argument("--model-version", choices=["2", "2.5"], help="IndexTTS 版本")
     r.add_argument("--speed", type=float, help="语速倍率 0.5~2.0（越小越快）")
     r.add_argument("--emotion-mode", choices=["text", "vector", "off"], help="情绪驱动方式")

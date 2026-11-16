@@ -77,7 +77,8 @@ Configuration is read from `config/settings.json` (create it from the example). 
 | `-n, --first-chapters N` | First N chapters only |
 | `--chapters 1,3,5-7` | Explicit chapter numbers |
 | `--first-chars N` | First N characters of each chapter (preview) |
-| `--tts {indextts2,edge,mimoai}` | TTS engine |
+| `--tts {indextts2,edge,openai,mimoai}` | TTS engine |
+| `--format {wav,m4b}` | per-chapter WAV, or one M4B with chapter marks (needs ffmpeg) |
 | `--model-version {2,2.5}` | IndexTTS version |
 | `--speed 0.5–2.0` | Speed multiplier, smaller is faster (`duration_factor`) |
 | `--emotion-mode {text,vector,off}` | How emotion drives delivery |

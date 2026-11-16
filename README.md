@@ -27,12 +27,11 @@ NovelCast/
 │   ├── tts_providers.py       # IndexTTS-2.5 / edge 提供方
 │   ├── pronunciation.py       # 多音字标注（<字|拼音>）
 │   ├── script_qa.py           # 剧本对齐与自动修复
-│   ├── voice_assigner.py      # 旧版逐章音色分配（保留兼容）
-│   ├── tts_generator.py       # 云端 TTS（mimoai）
-│   └── audio_processor.py     # 音频合并与切分
-├── scripts/                    # 独立脚本（生成/修复/音色库/抓数据）
-├── tests/                      # pytest 单测（38 个）
-├── tools/dev/                  # 开发期一次性脚本（vendored 依赖、迁移）
+│   ├── engine.py              # 阶段函数（分割 / 合成 / 编排，CLI 与旧脚本共用）
+│   └── utils.py               # 时长工具
+├── scripts/                    # 独立脚本（音色库 / 抓数据 / 修复 / 发音）
+├── tests/                      # pytest 单测（45 个）
+├── tools/dev/                  # 开发工具（假 TTS 服务）
 ├── .github/workflows/ci.yml    # GitHub Actions
 ├── config/
 │   ├── settings.json          # 主配置（含密钥，不提交）
@@ -87,10 +86,10 @@ cp config/settings.example.json config/settings.json
 
 > **注意**：LLM和TTS的API配置是分开的，可以使用不同的服务商和密钥。如果你使用同一个服务商，可以填相同的URL和密钥。
 
-### 2. 测试API连接
+### 2. 检查环境
 
 ```bash
-python scripts/test_api.py
+novelcast doctor
 ```
 
 ### 3. 生成有声书
@@ -223,9 +222,10 @@ LLM提示词中明确说明了角色识别规则，减少错误识别。
    老师 -> 白桦
 ```
 
-### 测试人物映射
+### 检查角色表
 ```bash
-python scripts/test_character_map.py
+novelcast run input/某本书.epub --split-only
+# 然后看 output/某本书_有声书/characters.json
 ```
 
 ## 输出结构
@@ -284,7 +284,8 @@ llm_raw_responses/
 
 ### novel_reader.py
 - 支持 `.txt`, `.docx`, `.doc`, `.epub` 格式（epub 按 spine 顺序抽取正文）
-- 自动识别章节标题；章节很多时丢弃 <100 字的目录页碎片
+- 自动识别章节标题：第X章 / 第X节 / 第X问 / 第X话 / 第X回、序章、楔子、尾声、`【第二问】`
+- 章节很多时丢弃 <100 字的目录页碎片
 - 返回结构化的章节数据
 
 ### dialogue_splitter.py
@@ -296,21 +297,20 @@ llm_raw_responses/
 - 自动验证覆盖率（最低70%）
 - 失败时自动降级到简单分割
 
-### voice_assigner.py
-- 自动识别角色
-- 分配音色ID
-- 支持自定义角色音色映射
-- **全局人物映射表**：保持跨章节角色一致性
+### local_tts.py
+- 逐行合成，分段文件 + `segments.json` 指纹缓存，支持断点续跑
+- 长句按 40 字再切；拼接时 LUFS 归一、峰值保护、对白/旁白不同停顿
 
-### tts_generator.py
-- 异步批量生成TTS音频
-- 自动处理长文本分割
-- 速率限制和错误重试
+### tts_providers.py
+- provider 适配：IndexTTS-2.5（本地）、edge-tts、OpenAI 兼容云端
+- 情绪提示与分情绪语速；`<字|拼音>` 发音标注（仅本地 2.5 生效）
 
-### audio_processor.py
-- WAV文件合并
-- 按时长自动切分
-- 静音插入
+### cast_manager.py
+- 全书角色表 → 音色分配（主角走 edge、次要角色用真人音色库、群杂轮换）
+- `apply_cast` 把音色写回每一行，表外角色按名字稳定分配
+
+### m4b.py
+- `--format m4b` 把逐章 WAV 封装成带章节标记的 M4B（需要系统里有 ffmpeg）
 
 ### script_qa.py
 - 原文与剧本逐字对齐（SequenceMatcher），按「实际文字」算覆盖率
@@ -581,7 +581,7 @@ python scripts/scan_pronunciation.py ... --llm --write
 
 ### API连接失败
 1. 检查 `config/settings.json` 中的API配置
-2. 运行 `python scripts/test_api.py` 测试连接
+2. 运行 `novelcast doctor` 检查配置
 3. 检查网络连接和API密钥
 
 ### 覆盖率过低
@@ -597,7 +597,7 @@ python scripts/scan_pronunciation.py ... --llm --write
 3. 在需要的地方导入使用
 
 ### 修改配置
-使用 `scripts/configure.py` 或直接编辑 `config/settings.json`
+直接编辑 `config/settings.json`，或运行 `novelcast config` 查看当前配置
 
 ## 许可证
 

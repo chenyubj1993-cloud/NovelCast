@@ -38,9 +38,10 @@ async def run_book(
     rebuild_roster: bool = False,
     rebuild_cast: bool = False,
     split_only: bool = False,
+    audio_format: str = "wav",
 ) -> Dict[str, object]:
     """对给定章节跑完整流水线，返回 {output_dir, audios, chapters}。"""
-    from scripts.generate import _roster_from_scripts, split_all_chapters
+    from novelcast.engine import _roster_from_scripts, split_all_chapters
 
     output_dir = Path(output_dir) if output_dir else config.get_output_dir(book_name)
     if fresh and output_dir.exists():
@@ -117,7 +118,7 @@ async def run_book(
         return {"output_dir": output_dir, "audios": [], "chapters": len(success_results)}
 
     # 阶段 2：TTS
-    from scripts.generate import generate_all_audio
+    from novelcast.engine import generate_all_audio
 
     audios = await generate_all_audio(
         success_results,
@@ -128,7 +129,26 @@ async def run_book(
         restart=restart,
         keep_segments=keep_segments,
     )
-    return {"output_dir": output_dir, "audios": audios, "chapters": len(success_results)}
+
+    m4b_path = None
+    if audio_format == "m4b" and audios:
+        from novelcast.m4b import build_m4b
+
+        titles = [r.chapter.title for r in success_results][: len(audios)]
+        m4b_path = build_m4b(
+            audios,
+            titles,
+            Path(output_dir) / f"{book_name}.m4b",
+            title=book_name,
+            artist=config.config.get("author") or None,
+        )
+        log.info(f"✅ M4B 已导出：{m4b_path}")
+    return {
+        "output_dir": output_dir,
+        "audios": audios,
+        "chapters": len(success_results),
+        "m4b": m4b_path,
+    }
 
 
 def plan(chapters, chars_per_minute: float = 282.0) -> List[Dict[str, object]]:

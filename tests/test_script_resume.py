@@ -4,8 +4,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from novelcast.engine import _filter_chapters_content, _load_script_result
 from novelcast.novel_reader import Chapter
-from scripts.generate import _filter_chapters_content, _load_script_result
 
 
 class FakeConfig:

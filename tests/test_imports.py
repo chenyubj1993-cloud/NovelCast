@@ -22,8 +22,7 @@ if "openai" not in sys.modules:
 
 MODULES = [
     "config_manager", "novel_reader", "character_registry", "cast_manager",
-    "llm_cache", "dialogue_splitter", "voice_assigner", "tts_generator",
-    "audio_processor", "coverage_analyzer", "utils",
+    "llm_cache", "dialogue_splitter", "coverage_analyzer", "utils", "engine",
 ]
 
 
@@ -33,12 +32,14 @@ def test_modules_import():
 
 
 def test_generate_script_imports():
+    engine = __import__("novelcast.engine", fromlist=["main"])
+    assert hasattr(engine, "main") and hasattr(engine, "split_all_chapters")
+    assert hasattr(engine, "_load_script_result")
     spec = importlib.util.spec_from_file_location("novelcast_generate", ROOT / "scripts" / "generate.py")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    assert hasattr(mod, "main") and hasattr(mod, "split_all_chapters")
-    assert hasattr(mod, "_load_script_result")
-    print("  scripts/generate.py 导入成功")
+    assert hasattr(mod, "main")
+    print("  scripts/generate.py 兼容入口导入成功")
 
 
 if __name__ == "__main__":
