@@ -23,9 +23,7 @@ _curated = {"mtime": None, "words": {}}
 
 
 def _load_json_table(path: str) -> dict:
-    try:
-        mtime = os.path.getmtime(path)
-    except OSError:
+    if not os.path.exists(path):
         return {}
     try:
         with open(path, "r", encoding="utf-8") as f:
