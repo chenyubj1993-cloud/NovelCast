@@ -34,6 +34,8 @@ class PronunciationTest(unittest.TestCase):
 
         words = load_mapping()
         self.assertEqual(words.get("银行"), "YIN2 HANG2")
+        self.assertEqual(words.get("重担"), "ZHONG4 DAN4")
+        self.assertEqual(words.get("扒手"), "PA2 SHOU3")
         out = apply_pronunciation("他去银行取钱")
         self.assertIn("<银|YIN2><行|HANG2>", out)
 

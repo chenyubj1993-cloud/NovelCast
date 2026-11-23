@@ -15,34 +15,53 @@ import re
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_PATH = os.path.join(_PROJECT_ROOT, "config", "pronunciation.json")
 BUILTIN_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "polyphones.json")
+CURATED_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "polyphones_curated.json")
 
 _cache = {"path": None, "mtime": None, "words": {}}
 _builtin = {"mtime": None, "words": {}}
+_curated = {"mtime": None, "words": {}}
 
 
-def _load_builtin() -> dict:
-    """内置常用多音字词表（phrase-pinyin-data + jieba 词频生成，约 4.5k 词）。"""
+def _load_json_table(path: str) -> dict:
     try:
-        mtime = os.path.getmtime(BUILTIN_PATH)
+        mtime = os.path.getmtime(path)
     except OSError:
         return {}
-    if _builtin["mtime"] == mtime:
-        return _builtin["words"]
     try:
-        with open(BUILTIN_PATH, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
     except (OSError, ValueError):
         return {}
     words = data.get("words", {}) if isinstance(data, dict) else {}
-    if not isinstance(words, dict):
-        words = {}
-    _builtin.update(mtime=mtime, words=words)
-    return words
+    return words if isinstance(words, dict) else {}
+
+
+def _load_builtin() -> dict:
+    """自动生成的常用多音字词表（phrase-pinyin-data + jieba 词频，约 300 词）。"""
+    try:
+        mtime = os.path.getmtime(BUILTIN_PATH)
+    except OSError:
+        return {}
+    if _builtin["mtime"] != mtime:
+        _builtin.update(mtime=mtime, words=_load_json_table(BUILTIN_PATH))
+    return _builtin["words"]
+
+
+def _load_curated() -> dict:
+    """普通话水平测试多音字表（人工整理，约 2,000 词，覆盖优先于自动表）。"""
+    try:
+        mtime = os.path.getmtime(CURATED_PATH)
+    except OSError:
+        return {}
+    if _curated["mtime"] != mtime:
+        _curated.update(mtime=mtime, words=_load_json_table(CURATED_PATH))
+    return _curated["words"]
 
 
 def load_mapping(path: str | None = None) -> dict:
-    """内置词表打底，config/pronunciation.json 里的条目覆盖它。"""
+    """自动表打底 → 普测人工表覆盖 → config/pronunciation.json 最终覆盖。"""
     merged = dict(_load_builtin())
+    merged.update(_load_curated())
     path = path or DEFAULT_PATH
     try:
         mtime = os.path.getmtime(path)
@@ -67,7 +86,7 @@ def mapping_version(path: str | None = None) -> str:
     """映射变化时让缓存失效。"""
     path = path or DEFAULT_PATH
     try:
-        builtin = f"{os.path.getmtime(BUILTIN_PATH):x}"
+        builtin = f"{os.path.getmtime(BUILTIN_PATH):x}-{os.path.getmtime(CURATED_PATH):x}"
     except OSError:
         builtin = "none"
     try:

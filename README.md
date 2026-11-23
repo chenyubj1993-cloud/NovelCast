@@ -522,6 +522,16 @@ python scripts/scan_pronunciation.py ... --llm --write
 
 > 只有 `model_version` 为 2.5 时才会启用标注；用 2.x 会把 `<重|CHONG2>` 原样念出来。
 
+**内置词表**：仓库自带两层词表，开箱即用，不用每本书现扫：
+
+| 文件 | 来源 | 词数 |
+|---|---|---|
+| `novelcast/data/polyphones.json` | phrase-pinyin-data + pinyin-data，按 jieba 词频筛「读音反直觉」的词 | 277 |
+| `novelcast/data/polyphones_curated.json` | 普通话水平测试多音字表（A–Z 共 22 页人工整理），覆盖 2,060 词 | 2,060 |
+
+合并顺序是「自动表 → 普测表 → `config/pronunciation.json`」，后者覆盖前者，所以单个词读错时仍可手改。
+不需要内置表时，在 `config/settings.json` 加 `"pronunciation": {"enabled": false}` 即可关闭。
+
 ## 故障排除
 
 ### asyncio.Lock() 错误
