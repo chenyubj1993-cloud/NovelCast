@@ -40,3 +40,5 @@ llm_raw_responses/
 # 例外：示例配置与测试夹具
 !config/settings.example.json
 !tests/fixtures/**
+.vendor_qwen/
+.tmp_*

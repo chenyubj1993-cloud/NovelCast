@@ -13,6 +13,14 @@ import sys
 _LOGGER = logging.getLogger("novelcast")
 _FORMAT = "%(message)s"
 
+# 默认就给一个 stdout handler：脚本/库直接调用时（没走 CLI）也能看到输出，
+# 否则 logging 的 lastResort 只打印 WARNING 以上，info 全被吞掉。
+_LOGGER.setLevel(logging.INFO)
+_LOGGER.propagate = False
+_default = logging.StreamHandler(sys.stdout)
+_default.setFormatter(logging.Formatter(_FORMAT))
+_LOGGER.addHandler(_default)
+
 
 def setup(verbose: bool = False, quiet: bool = False) -> None:
     if verbose:

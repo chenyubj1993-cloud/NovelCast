@@ -90,7 +90,7 @@ def ask_llm(cands, config):
     """让 DeepSeek 为每个候选词选读音，返回 {word: 'CHONG2 QING4'}。"""
     from novelcast.dialogue_splitter import get_llm_client
 
-    client = get_llm_client(config)
+    client = get_llm_client()
     prompt = (
         "你是中文配音校对。下面是小说里含多音字的词及其上下文，"
         "请判断每个词在上下文中的正确读音，按字给出带声调拼音（数字声调，大写，空格分隔）。\n"
@@ -110,7 +110,21 @@ def ask_llm(cands, config):
         data = json.loads(content[start:end + 1])
     except ValueError:
         return {}
-    return {k: v for k, v in data.items() if isinstance(v, str)}
+    default = {
+        c["word"]: " ".join(ch["default"] for ch in c["chars"]).upper()
+        for c in cands
+    }
+
+    def norm(s: str) -> str:
+        return " ".join(str(s).upper().split())
+
+    # 只保留「上下文读音 != pypinyin 默认读音」的词：两者一致的词模型一般不会读错，
+    # 全部标注只会把整本书的韵律都改一遍。
+    return {
+        k: norm(v)
+        for k, v in data.items()
+        if isinstance(v, str) and k in default and norm(v) != norm(default[k])
+    }
 
 
 def main():
@@ -131,9 +145,10 @@ def main():
         log.info("没有发现多音字风险词")
         return
 
-    for c in cands:
-        chars = "；".join(f"{x['char']} 默认{x['default']} 可选{'/'.join(x['all'])}" for x in c["chars"])
-        log.info(f"- {c['word']}: {chars}\n  上下文：{c['context']}")
+    if not args.llm:
+        for c in cands:
+            chars = "；".join(f"{x['char']} 默认{x['default']} 可选{'/'.join(x['all'])}" for x in c["chars"])
+            log.info(f"- {c['word']}: {chars}\n  上下文：{c['context']}")
 
     if args.llm:
         config = get_config()
