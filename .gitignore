@@ -24,6 +24,8 @@ config/api_config.json
 input/
 output/
 data/
+!novelcast/data/
+!novelcast/data/*.json
 models/
 third_party/
 llm_cache/

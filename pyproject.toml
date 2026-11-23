@@ -40,6 +40,9 @@ novelcast = "novelcast.cli:main"
 [tool.setuptools]
 packages = ["novelcast"]
 
+[tool.setuptools.package-data]
+novelcast = ["data/*.json"]
+
 [tool.ruff]
 line-length = 120
 target-version = "py311"

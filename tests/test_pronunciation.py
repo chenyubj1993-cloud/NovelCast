@@ -29,6 +29,14 @@ class PronunciationTest(unittest.TestCase):
     def test_empty_mapping_noop(self):
         self.assertEqual(apply_pronunciation("重庆", {}), "重庆")
 
+    def test_builtin_polyphone_table(self):
+        from novelcast.pronunciation import load_mapping
+
+        words = load_mapping()
+        self.assertEqual(words.get("银行"), "YIN2 HANG2")
+        out = apply_pronunciation("他去银行取钱")
+        self.assertIn("<银|YIN2><行|HANG2>", out)
+
 
 if __name__ == "__main__":
     unittest.main()

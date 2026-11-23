@@ -14,38 +14,67 @@ import re
 
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_PATH = os.path.join(_PROJECT_ROOT, "config", "pronunciation.json")
+BUILTIN_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "polyphones.json")
 
 _cache = {"path": None, "mtime": None, "words": {}}
+_builtin = {"mtime": None, "words": {}}
+
+
+def _load_builtin() -> dict:
+    """内置常用多音字词表（phrase-pinyin-data + jieba 词频生成，约 4.5k 词）。"""
+    try:
+        mtime = os.path.getmtime(BUILTIN_PATH)
+    except OSError:
+        return {}
+    if _builtin["mtime"] == mtime:
+        return _builtin["words"]
+    try:
+        with open(BUILTIN_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return {}
+    words = data.get("words", {}) if isinstance(data, dict) else {}
+    if not isinstance(words, dict):
+        words = {}
+    _builtin.update(mtime=mtime, words=words)
+    return words
 
 
 def load_mapping(path: str | None = None) -> dict:
+    """内置词表打底，config/pronunciation.json 里的条目覆盖它。"""
+    merged = dict(_load_builtin())
     path = path or DEFAULT_PATH
     try:
         mtime = os.path.getmtime(path)
     except OSError:
-        return {}
+        return merged
     if _cache["path"] == path and _cache["mtime"] == mtime:
         return _cache["words"]
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
     except (OSError, ValueError):
-        return {}
+        return merged
     words = data.get("words", data) if isinstance(data, dict) else {}
     if not isinstance(words, dict):
         words = {}
-    _cache.update(path=path, mtime=mtime, words=words)
-    return words
+    merged.update(words)
+    _cache.update(path=path, mtime=mtime, words=merged)
+    return merged
 
 
 def mapping_version(path: str | None = None) -> str:
     """映射变化时让缓存失效。"""
     path = path or DEFAULT_PATH
     try:
-        st = os.stat(path)
-        return f"{st.st_mtime_ns:x}"
+        builtin = f"{os.path.getmtime(BUILTIN_PATH):x}"
     except OSError:
-        return "none"
+        builtin = "none"
+    try:
+        st = os.stat(path)
+        return f"{builtin}-{st.st_mtime_ns:x}"
+    except OSError:
+        return f"{builtin}-none"
 
 
 def annotate_word(word: str, pinyin: str | None) -> str:
@@ -96,6 +125,11 @@ def apply_pronunciation(text: str, words: dict | None = None) -> str:
 
 def enabled_for(config) -> bool:
     data = getattr(config, "config", config) or {}
+    if not isinstance(data, dict):
+        data = {}
+    pron = data.get("pronunciation", {})
+    if isinstance(pron, dict) and pron.get("enabled") is False:
+        return False
     tts = data.get("tts", {}) if isinstance(data, dict) else {}
     provider = str(tts.get("provider") or "")
     version = str(tts.get("model_version") or "")
