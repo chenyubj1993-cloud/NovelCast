@@ -420,8 +420,3 @@ def get_config() -> ConfigManager:
     return _config_manager
 
 
-def reload_config():
-    """重新加载配置"""
-    global _config_manager
-    _config_manager = None
-    return get_config()

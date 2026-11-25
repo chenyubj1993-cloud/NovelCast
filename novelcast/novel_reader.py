@@ -321,38 +321,3 @@ def split_chapters(text: str) -> List[Chapter]:
     return chapters
 
 
-def get_chapter_text(chapter: Chapter, max_chunk_size: int = None) -> List[str]:
-    """
-    将章节文本分割成适合LLM处理的块
-
-    Args:
-        chapter: 章节数据
-        max_chunk_size: 最大块大小（字符数）
-
-    Returns:
-        文本块列表
-    """
-    config = get_config()
-    if max_chunk_size is None:
-        max_chunk_size = config.generation.chunk_size
-
-    text = chapter.text
-    if len(text) <= max_chunk_size:
-        return [text]
-
-    # 按段落分割
-    paragraphs = text.split('\n\n')
-    chunks = []
-    current_chunk = []
-
-    for para in paragraphs:
-        if len('\n\n'.join(current_chunk + [para])) > max_chunk_size and current_chunk:
-            chunks.append('\n\n'.join(current_chunk))
-            current_chunk = [para]
-        else:
-            current_chunk.append(para)
-
-    if current_chunk:
-        chunks.append('\n\n'.join(current_chunk))
-
-    return chunks

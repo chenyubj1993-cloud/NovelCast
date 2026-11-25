@@ -277,10 +277,6 @@ def load_roster(path: Path) -> Optional[dict]:
     return data
 
 
-def roster_names(roster: dict) -> List[str]:
-    return list((roster or {}).get("characters", {}).keys())
-
-
 def roster_to_prompt_map(roster: dict, max_chars: int = PROMPT_MAP_MAX_CHARS) -> str:
     """把角色表压成提示词里的一段文本（名字 + 别名 + 性别年龄）。"""
     characters = (roster or {}).get("characters", {})

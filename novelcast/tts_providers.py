@@ -386,13 +386,3 @@ def build_provider(config, name=None):
     raise ValueError(f"未知的 TTS provider: {name}")
 
 
-def ensure_reference_voice(character, out_dir, provider=None, text=None):
-    """用 edge-tts 为角色生成一段参考音（mp3），返回路径。"""
-    provider = provider or EdgeTTSProvider()
-    os.makedirs(out_dir, exist_ok=True)
-    path = os.path.join(out_dir, f"{character}.mp3")
-    if os.path.exists(path) and os.path.getsize(path) > 2000:
-        return path
-    sample = text or f"我是{character}。这是一段用来确定音色的参考音频。"
-    provider.synthesize(sample, character, path)
-    return path

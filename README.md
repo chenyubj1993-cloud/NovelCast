@@ -154,9 +154,9 @@ novelcast run input/全职高手.epub --chapters 1 --offline --split-only
 内置的 8 个音色是 edge-tts 合成的（微软神经网络语音），克隆出来仍带电子感。想要更自然的声音，可以从开源语料构建自己的音色库：
 
 ```powershell
-# 1) 朗读库（AISHELL-3 子集，主要给群杂）
-python scripts/fetch_aishell3_subset.py --speakers 40 --per-speaker 2
-python scripts/build_voice_bank.py data\aishell3_hf --count 24
+# 1) 朗读库（AISHELL-3 train 子集，主要给群杂）
+python scripts/fetch_aishell3_modelscope.py --per-speaker 4
+python scripts/build_voice_bank.py data\aishell3_ms --count 24
 
 # 2) 播音腔库（WenetSpeech4TTS Premium 子集，主要给次要角色）
 #    流式读 tar.gz，取够指定量就断开，不会下完整 8.5GB

@@ -157,8 +157,8 @@ The roster and cast are plain JSON: edit them and re-run without `--rebuild-rost
 The eight built-in voices are edge-tts synthetic, so clones of them still sound synthetic. For natural voices, build a bank from open corpora and point `voice_bank` at it:
 
 ```bash
-python scripts/fetch_aishell3_subset.py --speakers 40 --per-speaker 2
-python scripts/build_voice_bank.py data/aishell3_hf --count 24
+python scripts/fetch_aishell3_modelscope.py --per-speaker 4
+python scripts/build_voice_bank.py data/aishell3_ms --count 24
 python scripts/fetch_ws4tts.py --max-bytes 2000MB   # streams the tar.gz and stops when satisfied
 python scripts/build_voice_bank.py data/ws4tts --count 28 --style broadcast \
     --source-name ws4tts --id-prefix WS --infer-gender --merge

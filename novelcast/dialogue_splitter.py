@@ -55,12 +55,6 @@ def get_global_character_map() -> Dict[str, str]:
     return _global_character_map.copy()
 
 
-def update_global_character_map(new_map: Dict[str, str]):
-    """更新全局人物映射表"""
-    global _global_character_map
-    _global_character_map.update(new_map)
-
-
 # LLM 结果缓存实例（按 书名/模型/提示词/角色表 区分）
 _llm_caches: Dict[tuple, LlmCache] = {}
 
@@ -226,23 +220,6 @@ def get_async_llm_client() -> AsyncOpenAI:
     )
 
 
-def split_dialogues(text: str, chapter_title: str, book_name: str, character_map: Optional[Dict[str, str]] = None) -> List[DialogueLine]:
-    """
-    将文本分割成对话行（同步版本）
-
-    Args:
-        text: 要分割的文本
-        chapter_title: 章节标题
-        book_name: 书名
-        character_map: 全书角色表（角色名 -> 说明），用于约束标注
-
-    Returns:
-        对话行列表
-    """
-    client = get_llm_client()
-    return _split_dialogues_impl(client, text, chapter_title, book_name, is_async=False, character_map=character_map)
-
-
 async def split_dialogues_async(text: str, chapter_title: str, book_name: str, character_map: Optional[Dict[str, str]] = None) -> List[DialogueLine]:
     """
     将文本分割成对话行（异步版本）
@@ -258,26 +235,6 @@ async def split_dialogues_async(text: str, chapter_title: str, book_name: str, c
     """
     client = get_async_llm_client()
     return await _split_dialogues_impl_async(client, text, chapter_title, book_name, character_map=character_map)
-
-
-def _split_dialogues_impl(client, text: str, chapter_title: str, book_name: str, is_async: bool = False, character_map: Optional[Dict[str, str]] = None) -> List[DialogueLine]:
-    """分割对话的实现"""
-    config = get_config()
-
-    # 第一步：按chunk_size分块（章节级别）
-    chunks = _split_text_chunks(text, config.generation.chunk_size)
-    all_lines = []
-
-    for i, chunk in enumerate(chunks):
-        # 每个块固定分成N段（N=llm_concurrency）
-        segments = _split_fixed_segments(chunk, config.concurrency.llm_concurrency)
-        for si, segment in enumerate(segments):
-            chunk_id = f"{chapter_title}_block{i:03d}_seg{si:03d}"
-            lines = _split_single_chunk(client, segment, chunk_id, book_name, chapter_title, is_async, character_map)
-            all_lines.extend(lines)
-
-    all_lines = _postprocess_script(all_lines, character_map)
-    return all_lines
 
 
 async def _split_dialogues_impl_async(client: AsyncOpenAI, text: str, chapter_title: str, book_name: str, character_map: Optional[Dict[str, str]] = None) -> List[DialogueLine]:
@@ -503,11 +460,6 @@ def _split_fixed_segments(text: str, n: int) -> List[str]:
     return segments
 
 
-def _split_single_chunk(client: OpenAI, text: str, chunk_id: str, book_name: str, chapter_title: str, is_async: bool = False, character_map: Optional[Dict[str, str]] = None) -> List[DialogueLine]:
-    """处理单个chunk（同步）- 使用递归二分法处理内容审核拒绝"""
-    return _recursive_split_by_moderation(client, text, chapter_title, chunk_id, book_name, character_map=character_map)
-
-
 async def _split_single_chunk_async(client: AsyncOpenAI, text: str, chunk_id: str, book_name: str, chapter_title: str, character_map: Optional[Dict[str, str]] = None) -> List[DialogueLine]:
     """处理单个chunk（异步）- 使用递归二分法处理内容审核拒绝"""
     return await _recursive_split_by_moderation_async(client, text, chapter_title, chunk_id, book_name, character_map=character_map)
@@ -593,115 +545,6 @@ def _parse_llm_response(raw_response: str, original_text: str) -> List[DialogueL
     except json.JSONDecodeError as e:
         log.info(f"    ⚠️ JSON解析失败: {e}，使用fallback分割")
         return _fallback_split(original_text)
-
-
-def _try_simplified_prompt_sync(client: OpenAI, text: str, chapter_title: str, chunk_id: str, book_name: str) -> Optional[List[DialogueLine]]:
-    """
-    同步版：使用简化prompt重试
-    
-    当正常prompt失败时，用更简单的prompt再试一次，提高成功率
-    只在文本>500字时尝试（太短的文本简化prompt效果不好）
-    
-    Returns:
-        成功返回对话行列表，失败返回None
-    """
-    if len(text) <= 500:
-        return None
-    
-    config = get_config()
-    simplified_prompt = f"""请将以下文本按说话人分段，输出JSON数组。
-格式：[{{"character":"角色名","text":"内容"}}]
-如果是旁白或描述，character写"旁白"。
-
-文本：
-{text}"""
-    
-    try:
-        response = client.chat.completions.create(
-            model=config.llm_api.model,
-            messages=[
-                {"role": "system", "content": "只输出JSON数组，不要其他内容。"},
-                {"role": "user", "content": simplified_prompt}
-            ],
-            temperature=0.3
-        )
-        
-        raw_response = response.choices[0].message.content.strip()
-        log.info(f"    简化prompt重试: 收到响应({len(raw_response)}字)")
-        
-        # 解析响应
-        lines = _parse_llm_response(raw_response, text)
-        
-        # 验证覆盖率
-        coverage = _verify_coverage(text, lines)
-        if coverage >= 0.7:
-            log.info(f"    ✓ 简化prompt重试成功，覆盖率: {coverage:.1%}")
-            return lines
-        else:
-            log.info(f"    ✗ 简化prompt重试失败，覆盖率过低: {coverage:.1%}")
-            return None
-    except Exception as e:
-        log.info(f"    ✗ 简化prompt重试异常: {e}")
-        return None
-
-
-async def _try_simplified_prompt_async(client: AsyncOpenAI, text: str, chapter_title: str, chunk_id: str, book_name: str) -> Optional[List[DialogueLine]]:
-    """
-    异步版：使用简化prompt重试
-    
-    当正常prompt失败时，用更简单的prompt再试一次，提高成功率
-    只在文本>500字时尝试（太短的文本简化prompt效果不好）
-    
-    Returns:
-        成功返回对话行列表，失败返回None
-    """
-    if len(text) <= 500:
-        return None
-    
-    config = get_config()
-    rate_limiter = get_llm_rate_limiter()
-    
-    simplified_prompt = f"""请将以下文本按说话人分段，输出JSON数组。
-格式：[{{"character":"角色名","text":"内容"}}]
-如果是旁白或描述，character写"旁白"。
-
-文本：
-{text}"""
-    
-    try:
-        await rate_limiter.acquire()
-        
-        response = await client.chat.completions.create(
-            model=config.llm_api.model,
-            messages=[
-                {"role": "system", "content": "只输出JSON数组，不要其他内容。"},
-                {"role": "user", "content": simplified_prompt}
-            ],
-            temperature=0.3
-        )
-        
-        raw_response = response.choices[0].message.content.strip()
-        log.info(f"    简化prompt重试: 收到响应({len(raw_response)}字)")
-        
-        # 检查内容审核拒绝
-        if is_content_moderation_error(raw_response):
-            log.info("    ✗ 简化prompt重试也被内容审核拒绝")
-            return None
-        
-        # 解析响应
-        lines = _parse_llm_response(raw_response, text)
-        
-        # 验证覆盖率
-        coverage = _verify_coverage(text, lines)
-        if coverage >= 0.7:
-            log.info(f"    ✓ 简化prompt重试成功，覆盖率: {coverage:.1%}")
-            return lines
-        else:
-            log.info(f"    ✗ 简化prompt重试失败，覆盖率过低: {coverage:.1%}")
-            return None
-    except Exception as e:
-        log.info(f"    ✗ 简化prompt重试异常: {e}")
-        return None
 
 
 def _verify_coverage(original_text: str, lines: List[DialogueLine], min_ratio: float = 0.7) -> float:
@@ -932,63 +775,6 @@ def is_content_moderation_error(content: str) -> bool:
     return False
 
 
-def _extract_json_array(raw: str) -> Optional[list]:
-    """从LLM原始返回中稳健提取JSON数组"""
-    # 1. 去除markdown代码块
-    cleaned = raw.strip()
-    if cleaned.startswith("```"):
-        cleaned = re.sub(r'^```(?:json)?\s*', '', cleaned)
-        cleaned = re.sub(r'\s*```$', '', cleaned)
-
-    # 2. 直接尝试解析
-    try:
-        data = json.loads(cleaned)
-        if isinstance(data, list):
-            return data
-        if isinstance(data, dict):
-            # API错误返回
-            if "error" in data:
-                return None
-            # dict包装数组：按优先级查找
-            for key in ["lines", "dialogues", "segments", "result", "content",
-                         "items", "data", "output", "text", "texts", "speeches",
-                         "clips", "parts", "chapters", "dialogue_lines", "thoughts"]:
-                if key in data and isinstance(data[key], list):
-                    return data[key]
-            # 遍历所有value找数组
-            for v in data.values():
-                if isinstance(v, list):
-                    return v
-            return None
-    except json.JSONDecodeError:
-        pass
-
-    # 3. 提取最外层 [...] 数组
-    match = re.search(r'\[[\s\S]*\]', cleaned)
-    if match:
-        try:
-            return json.loads(match.group())
-        except json.JSONDecodeError:
-            # 修复常见问题：尾逗号
-            fixed = re.sub(r',\s*([\]\}])', r'\1', match.group())
-            try:
-                return json.loads(fixed)
-            except json.JSONDecodeError:
-                pass
-
-    # 4. 拼接逗号分隔的独立JSON对象为数组
-    obj_pattern = re.compile(r'\{[^{}]*\}')
-    objects = obj_pattern.findall(cleaned)
-    if len(objects) >= 2:
-        try:
-            arr = [json.loads(obj) for obj in objects]
-            return arr
-        except json.JSONDecodeError:
-            pass
-
-    return None
-
-
 def _split_text_for_moderation(text: str) -> Tuple[str, str]:
     """
     智能拆分文本（优先在标点符号处切割，保持句子完整性）
@@ -1047,47 +833,6 @@ def _split_text_for_moderation(text: str) -> Tuple[str, str]:
     return text[:best_pos], text[best_pos:]
 
 
-def _handle_moderation_split(
-    client: OpenAI,
-    text: str,
-    chapter_title: str,
-    chunk_prefix: str,
-    book_name: str,
-    depth: int,
-    max_depth: int,
-    character_map: Optional[Dict[str, str]] = None
-) -> List[DialogueLine]:
-    """同步版处理内容审核拒绝的拆分"""
-    config = get_config()
-    min_split_length = config.generation.min_split_length
-
-    first_half, second_half = _split_text_for_moderation(text)
-    log.info(f"  {'  ' * depth}  拆分位置: {len(first_half)}/{len(text)}字")
-
-    # 递归前检查文本长度，过短则使用fallback分割
-    first_lines = []
-    if len(first_half) < min_split_length:
-        log.info(f"  {'  ' * depth}  ⚠ 前半部分过短({len(first_half)}字<{min_split_length})，使用fallback分割")
-        first_lines = _fallback_split(first_half)
-    else:
-        first_lines = _recursive_split_by_moderation(
-            client, first_half, chapter_title,
-            f"{chunk_prefix}_first", book_name, depth + 1, max_depth, character_map
-        )
-
-    second_lines = []
-    if len(second_half) < min_split_length:
-        log.info(f"  {'  ' * depth}  ⚠ 后半部分过短({len(second_half)}字<{min_split_length})，使用fallback分割")
-        second_lines = _fallback_split(second_half)
-    else:
-        second_lines = _recursive_split_by_moderation(
-            client, second_half, chapter_title,
-            f"{chunk_prefix}_second", book_name, depth + 1, max_depth, character_map
-        )
-
-    return first_lines + second_lines
-
-
 async def _handle_moderation_split_async(
     client: AsyncOpenAI,
     text: str,
@@ -1127,135 +872,6 @@ async def _handle_moderation_split_async(
         )
 
     return first_lines + second_lines
-
-
-def _recursive_split_by_moderation(
-    client: OpenAI,
-    text: str,
-    chapter_title: str,
-    chunk_prefix: str,
-    book_name: str,
-    depth: int = 0,
-    max_depth: int = 10,
-    character_map: Optional[Dict[str, str]] = None
-) -> List[DialogueLine]:
-    """同步版递归二分法处理内容审核拒绝"""
-    config = get_config()
-
-    if depth >= max_depth:
-        log.info(f"  {'  ' * depth}⚠ 达到最大递归深度({max_depth})，使用fallback")
-        return _fallback_split(text)
-
-    min_split_length = config.generation.min_split_length
-    if len(text) < min_split_length:
-        log.info(f"  {'  ' * depth}⚠ 文本过短({len(text)}字<{min_split_length})，使用fallback分割")
-        return _fallback_split(text)
-
-    # 构建提示词
-    prompt = config.config.get("split_prompt", "").replace("{text}", text)
-    # 替换角色映射占位符（优先使用调用方传入的全书角色表）
-    if character_map is None:
-        character_map = get_global_character_map()
-    if isinstance(character_map, str):
-        character_map_str = character_map.strip() or "（暂无已知角色）"
-    elif character_map:
-        character_map_str = "\n".join([f"- {name}: {voice}" for name, voice in character_map.items()])
-    else:
-        character_map_str = "（暂无已知角色）"
-    prompt = prompt.replace("{character_map}", character_map_str)
-    chunk_id = f"{chunk_prefix}_d{depth}"
-
-    # 缓存：同一段文本 + 同一角色表，直接复用上次结果
-    cache = get_llm_cache(book_name, character_map)
-    cache_context = _cache_context(character_map)
-    cached = cache.get(text, context=cache_context)
-    if cached is not None:
-        cached_lines = [
-            DialogueLine(character=i.get("character", "旁白"), text=i.get("text", ""), emotion=i.get("emotion", "neutral"))
-            for i in cached if isinstance(i, dict) and i.get("text")
-        ]
-        if cached_lines:
-            log.info(f"  {'  ' * depth}♻️ 命中缓存: {len(cached_lines)}段")
-            return cached_lines
-
-    # 重试配置
-    max_api_retries = 3  # API调用异常最大重试次数
-    max_parse_retries = 1  # JSON解析/覆盖率失败最大重试次数
-
-    # API调用异常重试循环
-    for api_attempt in range(max_api_retries):
-        try:
-            response = client.chat.completions.create(
-                model=config.llm_api.model,
-                messages=[
-                    {"role": "system", "content": "你是一个JSON输出助手，只输出JSON数组，不要其他内容。"},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.3
-            )
-
-            raw_response = response.choices[0].message.content.strip()
-
-            # 检查内容审核拒绝
-            if is_content_moderation_error(raw_response):
-                log.info(f"  {'  ' * depth}⚠ 内容审核拒绝(深度{depth})，对半拆分处理...")
-                _save_llm_response(chunk_id, raw_response, book_name, chapter_title, error="content_moderation_rejected")
-                return _handle_moderation_split(client, text, chapter_title, chunk_prefix, book_name, depth, max_depth, character_map)
-
-            # 保存原始响应
-            _save_llm_response(chunk_id, raw_response, book_name, chapter_title)
-
-            # JSON解析/覆盖率重试循环
-            for parse_attempt in range(max_parse_retries + 1):
-                # 解析响应
-                lines = _parse_llm_response(raw_response, text)
-
-                # 验证覆盖率
-                coverage = _verify_coverage(text, lines)
-                if coverage >= 0.7:
-                    cache.put(text, [asdict(l) for l in lines], context=cache_context)
-                    return lines
-
-                # 覆盖率过低，判断是否重试
-                if parse_attempt < max_parse_retries:
-                    log.info(f"  {'  ' * depth}⚠ 覆盖率过低({coverage:.1%})，重试解析({parse_attempt + 1}/{max_parse_retries})...")
-                    continue
-                else:
-                    log.info(f"  {'  ' * depth}⚠ 覆盖率过低({coverage:.1%})，已达重试上限，尝试简化prompt重试...")
-                    # 简化prompt重试
-                    simplified_result = _try_simplified_prompt_sync(client, text, chapter_title, chunk_id, book_name)
-                    if simplified_result:
-                        return simplified_result
-                    log.info(f"  {'  ' * depth}⚠ 简化prompt重试失败，使用fallback分割")
-                    return _fallback_split(text)
-
-        except Exception as e:
-            error_msg = str(e).lower()
-            
-            # 超时且字数多，直接拆分（明显是字数太多导致处理慢）
-            is_timeout = "timeout" in error_msg or "timed out" in error_msg or "90" in error_msg
-            if is_timeout and len(text) > 1000:
-                log.info(f"  {'  ' * depth}⚠ API超时({len(text)}字>1000)，直接拆分处理...")
-                _save_llm_response(chunk_id, "", book_name, chapter_title, error=f"timeout_with_long_text({len(text)}字)")
-                return _handle_moderation_split(client, text, chapter_title, chunk_prefix, book_name, depth, max_depth, character_map)
-            
-            # 其他错误，按原有逻辑重试
-            if api_attempt < max_api_retries - 1:
-                wait_time = (api_attempt + 1) * 2  # 递增等待：2秒、4秒
-                log.info(f"  {'  ' * depth}⚠ API调用异常: {e}，{wait_time}秒后重试({api_attempt + 1}/{max_api_retries})...")
-                time.sleep(wait_time)
-            else:
-                log.info(f"  {'  ' * depth}⚠ API调用异常: {e}，已达重试上限，尝试简化prompt重试...")
-                # 简化prompt重试
-                simplified_result = _try_simplified_prompt_sync(client, text, chapter_title, chunk_id, book_name)
-                if simplified_result:
-                    return simplified_result
-                log.info(f"  {'  ' * depth}⚠ 简化prompt重试失败，使用fallback分割")
-                _save_llm_response(chunk_id, "", book_name, chapter_title, error=str(e))
-                return _fallback_split(text)
-
-    # 理论上不会到这里，但作为保底
-    return _fallback_split(text)
 
 
 async def _recursive_split_by_moderation_async(
