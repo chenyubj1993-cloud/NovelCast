@@ -17,6 +17,14 @@ DEFAULT_PATH = os.path.join(_PROJECT_ROOT, "config", "pronunciation.json")
 BUILTIN_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "polyphones.json")
 CURATED_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "polyphones_curated.json")
 
+# 语气助词、代词、轻声词：默认读音本来就对，钉住反而生硬（如 什么 -> SHEN2 ME5）
+NEUTRAL_WORDS = frozenset({
+    "什么", "那个", "这个", "哪个", "那么", "这么", "怎么", "怎样", "怎样",
+    "一个", "一下", "一些", "时候", "意思", "我们", "你们", "他们", "她们",
+    "它们", "咱们", "人们", "的", "了", "着", "过", "吧", "吗", "呢", "啊",
+    "呀", "嘛", "哦", "嗯", "啦", "哇", "咯", "喽", "罢了", "而已",
+})
+
 _cache = {"path": None, "mtime": None, "words": {}}
 _builtin = {"mtime": None, "words": {}}
 _curated = {"mtime": None, "words": {}}
@@ -56,10 +64,15 @@ def _load_curated() -> dict:
     return _curated["words"]
 
 
+def _keep(word: str) -> bool:
+    """过滤语气助词/代词/轻声词，以及单字（脱离上下文标注没有意义）。"""
+    return bool(word) and len(word) > 1 and word not in NEUTRAL_WORDS
+
+
 def load_mapping(path: str | None = None) -> dict:
     """自动表打底 → 普测人工表覆盖 → config/pronunciation.json 最终覆盖。"""
-    merged = dict(_load_builtin())
-    merged.update(_load_curated())
+    merged = {w: p for w, p in _load_builtin().items() if _keep(w)}
+    merged.update({w: p for w, p in _load_curated().items() if _keep(w)})
     path = path or DEFAULT_PATH
     try:
         mtime = os.path.getmtime(path)
@@ -84,7 +97,7 @@ def mapping_version(path: str | None = None) -> str:
     """映射变化时让缓存失效。"""
     path = path or DEFAULT_PATH
     try:
-        builtin = f"{os.path.getmtime(BUILTIN_PATH):x}-{os.path.getmtime(CURATED_PATH):x}"
+        builtin = f"{int(os.path.getmtime(BUILTIN_PATH)):x}-{int(os.path.getmtime(CURATED_PATH)):x}"
     except OSError:
         builtin = "none"
     try:

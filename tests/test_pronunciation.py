@@ -39,6 +39,15 @@ class PronunciationTest(unittest.TestCase):
         out = apply_pronunciation("他去银行取钱")
         self.assertIn("<银|YIN2><行|HANG2>", out)
 
+    def test_neutral_words_not_annotated(self):
+        from novelcast.pronunciation import load_mapping
+
+        words = load_mapping()
+        for w in ("什么", "那个", "这个", "意思", "时候"):
+            self.assertNotIn(w, words)
+        self.assertEqual(apply_pronunciation("你什么意思"), "你什么意思")
+        self.assertEqual(apply_pronunciation("切，拽什么拽啊"), "切，拽什么拽啊")
+
 
 if __name__ == "__main__":
     unittest.main()
