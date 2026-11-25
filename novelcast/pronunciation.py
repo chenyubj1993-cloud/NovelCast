@@ -117,11 +117,16 @@ def annotate_word(word: str, pinyin: str | None) -> str:
     py = [p for p in re.split(r"[\s]+", pinyin) if p]
     chars = list(word)
     if len(py) == 1 and len(chars) > 1:
+        if py[0] == "*":
+            return word
         return f"<{word}|{py[0]}>"
     if len(py) != len(chars):
-        # 对不齐就整词标注，交给模型自己切分
+        # 对不齐就整词标注，交给模型自己切分；带 * 的对不齐说明表写错了，直接跳过
+        if any(p == "*" for p in py):
+            return word
         return f"<{word}|{' '.join(py)}>"
-    return "".join(f"<{c}|{p}>" for c, p in zip(chars, py))
+    # * 表示这个字保持原样，只钉住词里需要的字（如 拽什么拽 -> ZHUA3 * *）
+    return "".join(c if p == "*" else f"<{c}|{p}>" for c, p in zip(chars, py))
 
 
 _ANNOTATED = re.compile(r"<[^<>|]+\|[^<>]+>")

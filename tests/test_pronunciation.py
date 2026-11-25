@@ -46,7 +46,7 @@ class PronunciationTest(unittest.TestCase):
         for w in ("什么", "那个", "这个", "意思", "时候"):
             self.assertNotIn(w, words)
         self.assertEqual(apply_pronunciation("你什么意思"), "你什么意思")
-        self.assertEqual(apply_pronunciation("切，拽什么拽啊"), "切，拽什么拽啊")
+        self.assertEqual(apply_pronunciation("切，拽什么拽啊"), "切，<拽|ZHUA3>什么<拽|ZHUA3>啊")
 
 
 if __name__ == "__main__":
