@@ -89,7 +89,11 @@ def review_emotions(
             data = json.loads(match.group(0))
         except json.JSONDecodeError:
             continue
+        if not isinstance(data, list):
+            continue
         for item in data:
+            if not isinstance(item, dict):
+                continue
             try:
                 idx = int(item.get("id"))
             except (TypeError, ValueError):

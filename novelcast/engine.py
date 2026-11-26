@@ -185,7 +185,6 @@ async def split_chapter(
 
         # 覆盖率按“实际文字”算：引号等标点在剧本里本来就会被合并
         original_len = len(chapter.text)
-        sum(len(line.text) for line in lines)
         coverage = report["content_coverage"] if original_len > 0 else 0
 
         elapsed = time.time() - start_time

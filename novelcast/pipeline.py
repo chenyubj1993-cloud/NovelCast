@@ -53,7 +53,7 @@ async def run_book(
     roster_file = output_dir / "characters.json"
     if roster_mode == "off":
         log.info("\n🎭 roster_mode=off：跳过全书角色表预扫，边分边认角色")
-        roster = {"version": 1, "characters": []}
+        roster = {"version": 1, "characters": {}}
         character_map = {}
     else:
         roster = None if rebuild_roster else load_roster(roster_file)

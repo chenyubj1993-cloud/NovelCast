@@ -60,7 +60,8 @@ def analyze_coverage(
     # 覆盖率按「去空白后的字符」计算
     orig_norm = _strip_ws(original_text)
     recon_norm = _strip_ws(reconstructed)
-    coverage = len(recon_norm) / len(orig_norm) if orig_norm else 0.0
+    # 空章节：没有内容可丢，视为完全覆盖（否则 coverage=0 与 fully_covered 矛盾）
+    coverage = len(recon_norm) / len(orig_norm) if orig_norm else 1.0
     lost_chars = max(0, len(orig_norm) - len(recon_norm))
     lost_ratio = 1 - coverage
 
@@ -113,11 +114,6 @@ def _find_lost_parts(original: str, reconstructed: str) -> List[Dict[str, str]]:
             "original": original[-100:],
             "reconstructed": reconstructed[-100:]
         })
-
-    # 如果拼接后长度与分割后长度不同，说明有重复
-    if len(reconstructed) != sum(len(line.text) for line in []):
-        # 这里需要传入lines，但为了简化，先跳过
-        pass
 
     return lost_parts
 
