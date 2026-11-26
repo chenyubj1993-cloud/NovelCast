@@ -47,8 +47,8 @@ def _attribute(before: str, after: str, names: Sequence[str]) -> str:
             if (
                 tail
                 and len(tail) <= 6
-                and not any(ch in tail for ch in "，,。！？；：")
-                and re.fullmatch(r"(?:%s)[：:]?" % SPEECH_VERBS, tail)
+                and not any(ch in tail for ch in "，,。！？；")
+                and TAIL_AFTER_NAME_RE.fullmatch(tail)
             ):
                 return name
         # 「说道：」后紧跟「叶秋……」

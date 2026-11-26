@@ -77,6 +77,18 @@ def _find_ref(refs_dir, *names):
     return None
 
 
+def _ref_fingerprint(refs_dir, voice):
+    """参考音内容指纹：换/重录参考音后，旧分段不应命中缓存。"""
+    path = _find_ref(refs_dir, voice) if voice else None
+    if not path:
+        return ""
+    try:
+        st = os.stat(path)
+    except OSError:
+        return ""
+    return "{}:{}".format(st.st_size, int(st.st_mtime))
+
+
 def resolve_reference(character, cast, refs_dir, edge=None):
     """给角色挑一段参考音：角色名 > cast 里的音色名（voice bank）> edge 现生成。"""
     cast = cast or {}
@@ -246,8 +258,11 @@ def synthesize_lines(
             continue
         character = line.get("character") or "旁白"
         emotion = line.get("emotion") or ""
-        voice = line.get("voice_id") or (cast or {}).get("voices", {}).get(character, "")
+        voice = line.get("voice_id") or line.get("voice") or (cast or {}).get("voices", {}).get(character, "")
         for part in split_text_for_tts(text, max_chars=max_chars):
+            # 纯标点（"……"/"——"）TTS 会返回 NoAudioReceived，直接跳过
+            if not re.search(r"[0-9A-Za-z\u4e00-\u9fff]", part):
+                continue
             units.append(
                 {
                     "text": apply_pronunciation(part) if use_pron else part,
@@ -261,6 +276,10 @@ def synthesize_lines(
     if units_out is not None:
         units_out.extend(units)
 
+    if not units:
+        log.info("    ⚠️ 没有可合成的文本（全是标点或空行）")
+        return {}
+
     done = {}
     cached = 0
     t0 = time.time()
@@ -273,6 +292,11 @@ def synthesize_lines(
         getattr(provider, "emotion_mode", ""),
         getattr(provider, "emo_alpha", ""),
     )
+    # edge 的 rate / 云端的 speed 不体现在上面的字段里，但会改变音频
+    if getattr(provider, "name", "") == "edge":
+        model_tag += "|rate={}".format(getattr(provider, "rate", ""))
+    elif getattr(provider, "kind", "") == "cloud":
+        model_tag += "|speed={}".format(getattr(provider, "speed", ""))
     pending = []
     for k, unit in enumerate(units):
         text = unit["text"]
@@ -281,7 +305,10 @@ def synthesize_lines(
         voice = unit.get("voice", "")
         seg_path = os.path.join(work_dir, f"seg_{k:04d}.wav")
         # 音色也进指纹：换 cast / 换 voice bank 后不会把旧音色的分段当成命中
-        key = _sha1("\x00".join([text, character, emotion, voice, model_tag]))
+        ref_fp = ""
+        if getattr(provider, "kind", "") != "cloud" and getattr(provider, "name", "") != "edge":
+            ref_fp = _ref_fingerprint(refs_dir, voice)
+        key = _sha1("\x00".join([text, character, emotion, voice, model_tag, ref_fp]))
         rec = manifest["items"].get(str(k)) or {}
         if (
             not restart
@@ -305,6 +332,9 @@ def synthesize_lines(
         emotion = unit["emotion"]
         if getattr(provider, "kind", "") == "cloud":
             # 云端 TTS 直接吃音色 id，不需要参考音文件
+            ref = unit.get("voice") or (cast or {}).get("voices", {}).get(character, "")
+        elif getattr(provider, "name", "") == "edge":
+            # edge 吃的是音色名（白桦 / zh-CN-YunxiNeural），传文件路径会被兜底成默认男声
             ref = unit.get("voice") or (cast or {}).get("voices", {}).get(character, "")
         else:
             with ref_lock:  # 多个线程同时给同一角色生成参考音会写出半截文件
@@ -334,8 +364,14 @@ def synthesize_lines(
     tts_conf = (getattr(config, "config", {}) or {}).get("tts", {}) or {}
     parallel = int(tts_conf.get("cloud_concurrency", 4) or 4)
     kind = getattr(provider, "kind", "")
-    can_parallel = kind == "cloud" or getattr(provider, "name", "") == "edge"
-    workers = max(1, min(parallel, len(pending))) if can_parallel else 1
+    # edge-tts 是消费级接口，4 路并发会被服务端限流（NoAudioReceived），默认只开 2 路
+    edge_workers = int(tts_conf.get("edge_concurrency", 2) or 2)
+    if kind == "cloud":
+        workers = max(1, min(parallel, len(pending)))
+    elif getattr(provider, "name", "") == "edge":
+        workers = max(1, min(edge_workers, len(pending)))
+    else:
+        workers = 1
 
     if workers > 1:
         log.info(f"  ⚡ 并发合成：{workers} 路（{kind or 'edge'}）")

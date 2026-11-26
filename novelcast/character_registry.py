@@ -304,3 +304,17 @@ def roster_to_prompt_map(roster: dict, max_chars: int = PROMPT_MAP_MAX_CHARS) ->
     if len(text) > max_chars:
         text = text[:max_chars] + "\n- …（其余角色略）"
     return text
+
+
+def names_from_prompt_map(text: str) -> List[str]:
+    """从 roster_to_prompt_map 生成的提示词文本里取回角色名列表。"""
+    names: List[str] = []
+    for line in (text or "").splitlines():
+        line = line.strip()
+        if not line.startswith("- "):
+            continue
+        body = line[2:].strip()
+        name = re.split(r"[（(]", body, 1)[0].strip()
+        if name and not name.startswith("…"):
+            names.append(name)
+    return names

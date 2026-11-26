@@ -1,7 +1,17 @@
-"""零散小工具：WAV 时长读取与时长格式化。"""
+"""零散小工具：WAV 时长读取、时长格式化与安全文件名。"""
 from __future__ import annotations
 
+import re
 import wave
+
+_INVALID_FILENAME = re.compile(r'[\\/:*?"<>|\r\n\t]')
+
+
+def safe_filename(name: str, max_len: int = 80) -> str:
+    """把章节标题变成 Windows/Linux 都能用的文件名（去掉 / : ? 等）。"""
+    cleaned = _INVALID_FILENAME.sub("_", (name or "").strip())
+    cleaned = cleaned.strip(" .")
+    return cleaned[:max_len] or "untitled"
 
 
 def get_wav_duration(wav_path: str) -> float:

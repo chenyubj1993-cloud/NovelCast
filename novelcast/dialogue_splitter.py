@@ -345,7 +345,13 @@ def _postprocess_script(lines: List[DialogueLine], character_map: Optional[Dict[
     except Exception:
         return lines
 
-    names = set(character_map or {}) | set(get_global_character_map().keys())
+    from novelcast.character_registry import names_from_prompt_map
+
+    if isinstance(character_map, str):
+        mapped = set(names_from_prompt_map(character_map))
+    else:
+        mapped = set(character_map or {})
+    names = mapped | set(get_global_character_map().keys())
     raw = [asdict(line) for line in lines]
     before_bad = count_bad_lines(raw)
     fixed, stats = postprocess_lines(raw, sorted(names))

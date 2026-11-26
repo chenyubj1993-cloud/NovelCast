@@ -78,6 +78,10 @@ def cmd_run(args) -> int:
         log.info(f"\n  预计音频 {total:.1f} 分钟（{total/60:.1f} 小时）· 输出目录 {config.get_output_dir(book_name)}")
         return 0
 
+    if args.fresh and args.offline:
+        log.error("❌ --fresh 会清空输出（包括已有剧本），不能和 --offline 一起用")
+        return 2
+
     result = asyncio.run(
         run_book(
             chapters,
@@ -180,7 +184,7 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("-n", "--first-chapters", type=int, help="只处理前 N 章")
     r.add_argument("--chapters", help="章节号，如 1,3,5-7")
     r.add_argument("--first-chars", type=int, help="每章只取前 N 字（试听）")
-    r.add_argument("--tts", choices=["indextts2", "edge", "openai", "mimoai"], help="TTS 引擎")
+    r.add_argument("--tts", choices=["indextts2", "edge", "openai"], help="TTS 引擎")
     r.add_argument(
         "--roster",
         choices=["full", "off"],
@@ -220,7 +224,11 @@ def main(argv=None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     setup_logging(verbose=getattr(args, "verbose", False), quiet=getattr(args, "quiet", False))
-    return args.func(args)
+    try:
+        return args.func(args)
+    except (ValueError, FileNotFoundError) as exc:
+        log.error(f"❌ {exc}")
+        return 1
 
 
 if __name__ == "__main__":

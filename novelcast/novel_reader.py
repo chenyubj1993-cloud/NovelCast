@@ -63,11 +63,11 @@ def read_novel(file_path: str) -> Tuple[str, str]:
 
 def _read_txt(path: Path) -> str:
     """读取TXT文件"""
-    encodings = ['utf-8', 'gbk', 'gb2312', 'utf-16']
+    encodings = ['utf-8-sig', 'utf-8', 'gbk', 'gb2312', 'utf-16']
     for encoding in encodings:
         try:
             with open(path, 'r', encoding=encoding) as f:
-                return f.read().strip()
+                return f.read().strip().lstrip("\ufeff")
         except UnicodeDecodeError:
             continue
     raise ValueError(f"无法读取文件，尝试的编码都失败: {path}")
@@ -231,7 +231,8 @@ def split_chapters(text: str) -> List[Chapter]:
         r'^Chapter\s*\d+.*$',  # Chapter X
         r'^【\s*第[一二三四五六七八九十百千\d]+[章回话问节]\s*.*】\s*$',  # 【第二问】
         r'^【\s*(序章|序言|楔子|引子|终章|尾声|后记|番外).*】\s*$',
-        r'^\d+\.\s+.*$',  # 1. 标题
+        # 数字标题（"1. 标题"）：必须短、且不以句末标点结尾，避免把正文列表行当章节
+        r'^\d+\.\s*[^。！？，,：:]{1,20}$',
     ]
 
     # 合并所有模式
@@ -243,6 +244,13 @@ def split_chapters(text: str) -> List[Chapter]:
     current_title = "全文"
     current_text = []
     chapter_num = 0
+
+    if text.startswith("\ufeff"):
+        text = text.lstrip("\ufeff")
+        lines = text.split("\n")
+
+    # 模板页（epub 制作工具残留）："警告：这个文件不要做任何改动" 之类，按行丢掉
+    boilerplate_lines = ("title.xhtml", "这个文件不要做任何改动", "书名在title.xhtml")
 
     for line in lines:
         line_stripped = line.strip()
@@ -258,6 +266,8 @@ def split_chapters(text: str) -> List[Chapter]:
             current_title = line_stripped
             current_text = []
         else:
+            if any(marker in line for marker in boilerplate_lines):
+                continue
             current_text.append(line)
 
     # 保存最后一个章节
@@ -268,6 +278,8 @@ def split_chapters(text: str) -> List[Chapter]:
             title=current_title,
             text='\n'.join(current_text).strip()
         ))
+
+    chapters = [c for c in chapters if c.text.strip()]
 
     # EPUB/网页来源常夹带目录页碎片：章节很多时丢掉 <100 字的伪章节
     if len(chapters) > 10:

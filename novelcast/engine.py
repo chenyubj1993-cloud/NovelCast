@@ -24,7 +24,13 @@ from novelcast.log import log
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from novelcast.cast_manager import apply_cast, build_cast, load_cast, print_cast, save_cast
-from novelcast.character_registry import build_roster_async, load_roster, roster_to_prompt_map, save_roster
+from novelcast.character_registry import (
+    build_roster_async,
+    load_roster,
+    names_from_prompt_map,
+    roster_to_prompt_map,
+    save_roster,
+)
 from novelcast.config_manager import ConfigManager, get_config
 from novelcast.coverage_analyzer import analyze_coverage, print_coverage_report, print_summary
 from novelcast.dialogue_splitter import (
@@ -43,7 +49,7 @@ from novelcast.script_qa import (
     repair_narration,
     repair_tail,
 )
-from novelcast.utils import format_duration, get_wav_duration
+from novelcast.utils import format_duration, get_wav_duration, safe_filename
 
 
 @dataclass
@@ -164,7 +170,11 @@ async def split_chapter(
             if unknown_idx:
                 try:
                     payload = [{"character": line.character, "text": line.text} for line in lines]
-                    payload, changes = review_unknown(payload, {name: {} for name in character_map}, config)
+                    payload, changes = review_unknown(
+                        payload,
+                        {name: {} for name in names_from_prompt_map(character_map)},
+                        config,
+                    )
                     for idx, _old, new in changes:
                         lines[idx].character = new
                     if changes:
@@ -205,7 +215,7 @@ async def split_chapter(
 
 def _load_script_result(chapter: Chapter, book_name: str, config: ConfigManager) -> Optional[ChapterSplitResult]:
     """断点续跑：如果本章剧本已存在，直接复用，不再调用 LLM。"""
-    script_file = config.get_output_dir(book_name) / f"{chapter.number:03d}_{chapter.title}_script.json"
+    script_file = config.get_output_dir(book_name) / f"{chapter.number:03d}_{safe_filename(chapter.title)}_script.json"
     if not script_file.exists():
         return None
     try:
@@ -229,6 +239,10 @@ def _load_script_result(chapter: Chapter, book_name: str, config: ConfigManager)
     if data.get("partial") and not getattr(chapter, "partial", False):
         log.info("    ⚠️ 已有剧本是「前若干字」的试跑结果（partial=true），重新分割")
         return None
+    recorded = data.get("source_chars")
+    if recorded and abs(int(recorded) - len(chapter.text)) > max(50, int(0.02 * len(chapter.text))):
+        log.info(f"    ⚠️ 已有剧本对应 {recorded} 字，本章 {len(chapter.text)} 字（源文本变了），重新分割")
+        return None
     report = alignment(chapter.text, lines)
     if report["content_coverage"] < 0.98:
         log.info(
@@ -248,7 +262,7 @@ def _save_script_result(result: ChapterSplitResult, book_name: str, config: Conf
     """把本章标注结果落盘为 {num:03d}_{title}_script.json，供断点续跑与 --offline 复用。"""
     output_dir = config.get_output_dir(book_name)
     output_dir.mkdir(parents=True, exist_ok=True)
-    script_file = output_dir / f"{result.chapter.number:03d}_{result.chapter.title}_script.json"
+    script_file = output_dir / f"{result.chapter.number:03d}_{safe_filename(result.chapter.title)}_script.json"
     payload = {
         "chapter": {"number": result.chapter.number, "title": result.chapter.title},
         "coverage": round(result.coverage, 4),
@@ -440,7 +454,7 @@ async def generate_chapter_audio(
         if not segment_files:
             log.info("    ❌ 没有生成任何音频")
             return None
-        output_path = str(output_dir / f"{chapter.number:03d}_{chapter.title}.wav")
+        output_path = str(output_dir / f"{chapter.number:03d}_{safe_filename(chapter.title)}.wav")
         stats = {}
         concat_segments(
             segment_files,
@@ -467,17 +481,30 @@ async def generate_chapter_audio(
         if issues:
             log.info("      ⚠️ " + "；".join(issues) + "，建议抽听")
 
+        script_file = output_dir / f"{chapter.number:03d}_{safe_filename(chapter.title)}_script.json"
+        previous = {}
+        if script_file.exists():
+            try:
+                previous = json.loads(script_file.read_text(encoding="utf-8"))
+            except Exception:  # noqa: BLE001
+                previous = {}
+        joined = "".join(l.text for l in lines)
         script_data = {
-            "chapter": chapter.title,
+            "chapter": previous.get("chapter") or {"number": chapter.number, "title": chapter.title},
+            "coverage": previous.get("coverage", round(len(joined) / max(1, len(chapter.text or "")), 4)),
+            "partial": previous.get("partial", bool(getattr(chapter, "partial", False))),
+            "source_chars": previous.get("source_chars", len(chapter.text or "")),
             "lines": [
                 {"character": l.character, "text": l.text, "emotion": l.emotion, "voice": l.voice_id}
                 for l in lines
             ],
         }
-        script_file = output_dir / f"{chapter.number:03d}_{chapter.title}_script.json"
-        with open(script_file, "w", encoding="utf-8") as f:
-            json.dump(script_data, f, ensure_ascii=False, indent=2)
-        _generate_readable_text_file(script_data, output_dir / f"{chapter.number:03d}_{chapter.title}_readable.txt")
+        try:
+            with open(script_file, "w", encoding="utf-8") as f:
+                json.dump(script_data, f, ensure_ascii=False, indent=2)
+        except OSError as exc:
+            log.error(f"      ❌ 剧本写盘失败：{exc}")
+        _generate_readable_text_file(script_data, output_dir / f"{chapter.number:03d}_{safe_filename(chapter.title)}_readable.txt")
 
         # 整章成功落盘后再清分段缓存，避免中途失败丢掉可续跑进度
         if not keep_segments:
@@ -486,7 +513,9 @@ async def generate_chapter_audio(
             log.info(f"      🧹 已清理分段缓存（{temp_dir.name}）")
         return [output_path]
 
-    log.info(f"    ❌ 不支持的 TTS provider: {provider_name}（可选：edge / indextts2 / openai）")
+    raise ValueError(
+        f"不支持的 TTS provider: {provider_name}（可选：edge / indextts2 / openai）"
+    )
     return None
 
 
