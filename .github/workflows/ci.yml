@@ -32,4 +32,14 @@ jobs:
         run: ruff check novelcast scripts tests
 
       - name: Test
-        run: pytest -q
+        run: |
+          set -o pipefail
+          python -m pytest -q 2>&1 | tee pytest.log
+
+      - name: Pytest failure tail
+        if: failure()
+        run: |
+          echo '### pytest tail' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          tail -120 pytest.log >> "$GITHUB_STEP_SUMMARY" || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"

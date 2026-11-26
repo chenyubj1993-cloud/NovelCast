@@ -6,7 +6,13 @@ set -e
 root=$(git rev-parse --show-toplevel)
 cd "$root"
 
-export PYTHONPATH="$root/.vendor${PYTHONPATH:+:$PYTHONPATH}"
+vendor="$root/.vendor"
+if command -v cygpath >/dev/null 2>&1; then
+    vendor=$(cygpath -w "$vendor")
+    export PYTHONPATH="$vendor${PYTHONPATH:+;$PYTHONPATH}"
+else
+    export PYTHONPATH="$vendor${PYTHONPATH:+:$PYTHONPATH}"
+fi
 
 py="${NOVELCAST_PYTHON:-}"
 if [ -z "$py" ]; then

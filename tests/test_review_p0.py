@@ -69,10 +69,12 @@ def test_cli_rejects_mimoai():
         build_parser().parse_args(["run", "x.txt", "--tts", "mimoai"])
 
 
-def test_cli_rejects_fresh_with_offline():
+def test_cli_rejects_fresh_with_offline(tmp_path):
     from novelcast.cli import main
 
-    assert main(["run", "input/全职高手.epub", "--fresh", "--offline"]) == 2
+    book = tmp_path / "book.txt"
+    book.write_text("第一章 测试\n正文内容。\n", encoding="utf-8")
+    assert main(["run", str(book), "--fresh", "--offline"]) == 2
 
 
 def test_safe_filename():
