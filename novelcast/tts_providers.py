@@ -149,6 +149,7 @@ class EdgeTTSProvider:
             time.sleep(1.2 * (attempt + 1))
         # 换默认音色再试一次，避免个别音色被服务端拒绝
         if voice_name != DEFAULT_EDGE_VOICE:
+            log.warning(f"⚠️ edge 音色 {voice_name} 连续失败，整段临时改用默认音色 {DEFAULT_EDGE_VOICE}")
             try:
                 _run_sync(DEFAULT_EDGE_VOICE)
                 if os.path.exists(output_path) and os.path.getsize(output_path) > 1000:
@@ -170,6 +171,9 @@ class IndexTTS2Provider:
         self.version = str(version)
         default_dir = "IndexTTS-2.5" if self.version.startswith("2.5") else "IndexTTS-2"
         self.model_dir = model_dir or os.path.join(_PROJECT_ROOT, "models", default_dir)
+        self.model_dir = os.path.expanduser(str(self.model_dir))
+        if not os.path.isabs(self.model_dir):
+            self.model_dir = os.path.join(_PROJECT_ROOT, self.model_dir)
         self.cfg_path = os.path.join(self.model_dir, "config.yaml")
         self.use_fp16 = use_fp16
         self.device = device

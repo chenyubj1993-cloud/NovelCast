@@ -189,6 +189,21 @@ async def split_chapter(
 
         elapsed = time.time() - start_time
         end_str = time.strftime("%H:%M:%S.") + f"{time.time() % 1:.3f}"[2:]  # 毫秒级
+        # 覆盖率过低说明 LLM 大面积漏字，这种剧本不能算成功（否则音频会被 skip_existing 锁死）
+        min_coverage = float(config.config.get("min_coverage", 0.7) or 0.7)
+        if coverage < min_coverage:
+            log.info(
+                f"  ❌ [{end_str}] 章节 {chapter.number:03d} 覆盖率仅 {coverage:.1%}"
+                f"（阈值 {min_coverage:.0%}），判定失败"
+            )
+            return ChapterSplitResult(
+                chapter=chapter,
+                lines=lines,
+                coverage=coverage,
+                success=False,
+                start_time=start_time,
+                end_time=time.time(),
+            )
         log.info(f"  ✅ [{end_str}] 章节 {chapter.number:03d} 分割完成: {len(lines)}段, 覆盖率{coverage:.1%} (耗时{elapsed:.1f}秒)")
 
         return ChapterSplitResult(
@@ -411,9 +426,12 @@ async def generate_chapter_audio(
 
     log.info(f"\n  🎤 章节 {chapter.number:03d}: {chapter.title}")
 
-    # 检查是否已存在
+    # 检查是否已存在（只认能读出时长的完整 wav，半截文件要重做）
     output_dir = config.get_output_dir(book_name)
-    existing_files = list(output_dir.glob(f"{chapter.number:03d}_*.wav"))
+    existing_files = [
+        f for f in output_dir.glob(f"{chapter.number:03d}_*.wav")
+        if get_wav_duration(str(f)) > 1.0
+    ]
 
     if skip_existing and existing_files:
         log.info(f"    ⏭ 已存在（{len(existing_files)}个文件），跳过")

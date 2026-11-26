@@ -112,6 +112,9 @@ def build_m4b(
     marks = chapter_marks(durations, titles)
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    part = output_path.parent / (output_path.name + ".part")
+    if part.exists():
+        part.unlink()
 
     with tempfile.TemporaryDirectory(prefix="novelcast_m4b_") as tmp:
         tmp_dir = Path(tmp)
@@ -125,7 +128,6 @@ def build_m4b(
             ffmpeg,
             "-hide_banner",
             "-loglevel", "error",
-            "-y",
             "-f", "concat",
             "-safe", "0",
             "-i", str(list_file),
@@ -136,13 +138,19 @@ def build_m4b(
             "-b:a", bitrate,
             "-movflags", "+faststart",
             "-f", "mp4",
-            str(output_path),
+            str(part),
         ]
         log.info(f"📦 封装 M4B：{output_path.name}（{len(wav_paths)} 章，{sum(durations) / 60:.1f} 分钟）")
-        proc = subprocess.run(cmd, capture_output=True, text=True)
+        try:
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
+        except subprocess.TimeoutExpired:
+            part.unlink(missing_ok=True)
+            raise M4BError("ffmpeg 封装超时（30 分钟）")
         if proc.returncode != 0:
+            part.unlink(missing_ok=True)
             detail = (proc.stderr or "").strip().splitlines()[-3:]
             raise M4BError("ffmpeg 封装失败：" + " | ".join(detail))
-    if not output_path.exists() or output_path.stat().st_size == 0:
+    if not part.exists() or part.stat().st_size == 0:
         raise M4BError("ffmpeg 没有产出 M4B 文件")
+    os.replace(part, output_path)
     return output_path

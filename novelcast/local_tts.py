@@ -65,6 +65,20 @@ def _gender_of_voice(voice):
     return "unknown"
 
 
+def _valid_audio(path, min_seconds=1.0):
+    """参考音/分段是否可用：优先按真实时长判断，读不了再退回文件大小。"""
+    try:
+        import soundfile as sf
+
+        info = sf.info(path)
+        return info.frames / max(1, info.samplerate) >= min_seconds
+    except Exception:  # noqa: BLE001
+        try:
+            return os.path.getsize(path) > 4000
+        except OSError:
+            return False
+
+
 def _find_ref(refs_dir, *names):
     """按名字找参考音，wav 优先（voice bank），其次 mp3（edge 生成的）。"""
     for name in names:
@@ -72,7 +86,7 @@ def _find_ref(refs_dir, *names):
             continue
         for ext in (".wav", ".mp3"):
             path = os.path.join(refs_dir, f"{name}{ext}")
-            if os.path.exists(path) and os.path.getsize(path) > 2000:
+            if os.path.exists(path) and _valid_audio(path, min_seconds=1.5):
                 return path
     return None
 

@@ -6,6 +6,7 @@
 import copy
 import json
 from dataclasses import dataclass, field
+from dataclasses import fields as dataclass_fields
 from pathlib import Path
 from typing import Optional
 
@@ -286,7 +287,10 @@ class ConfigManager:
         self.generation = GenerationConfig(**self.config.get("generation", {}))
         self.concurrency = ConcurrencyConfig(**self.config.get("concurrency", {}))
         self.rate_limit = RateLimitConfig(**self.config.get("rate_limit", {}))
-        self.tts = TtsConfig(**self.config.get("tts", {}))
+        tts_fields = {f.name for f in dataclass_fields(TtsConfig)}
+        self.tts = TtsConfig(
+            **{k: v for k, v in self.config.get("tts", {}).items() if k in tts_fields}
+        )
 
     def _load_config(self):
         """加载配置文件"""
@@ -379,7 +383,9 @@ class ConfigManager:
         > 默认 output/。
         """
         if self.output_override:
-            output_dir = self.output_override
+            output_dir = Path(str(self.output_override)).expanduser()
+            if not output_dir.is_absolute():
+                output_dir = PROJECT_ROOT / output_dir
         else:
             root = Path(str(self.config.get("output_dir") or "output")).expanduser()
             if not root.is_absolute():

@@ -139,7 +139,7 @@ async def run_book(
     if audio_format == "m4b" and audios:
         from novelcast.m4b import build_m4b
 
-        titles = [r.chapter.title for r in success_results][: len(audios)]
+        titles = [Path(p).stem.split("_", 1)[-1] for p in audios]
         m4b_path = build_m4b(
             audios,
             titles,

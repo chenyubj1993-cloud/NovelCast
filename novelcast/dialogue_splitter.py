@@ -419,50 +419,42 @@ def _split_text_chunks(text: str, chunk_size: int, fixed_segments: int = 0) -> L
 
 
 def _split_fixed_segments(text: str, n: int) -> List[str]:
-    """
-    将文本固定分成N段，在段落边界处切割
-    
-    逻辑：
-    1. 计算每段的理想长度 = len(text) / n
-    2. 第1段：从开头到理想长度，往前找最近的\n
-    3. 第2段：从第1段结尾到理想长度*2，往前找最近的\n
-    4. 第N段：从上一段结尾到文本最后
-    
-    参数：
-        text: 要分割的文本
-        n: 固定分段数
+    """把文本尽量均匀地切成 n 段，切点优先落在换行/句末，且保证不丢字。
+
+    旧实现用 rfind 的窗口可能越过 start 或跳过换行符，实测 180 字会被切成
+    102/72/4 并丢掉 2 个字；这里改为严格递增的切点，并用 join 校验。
     """
     if n <= 1 or len(text) <= 100:
         return [text]
-    
+
     segments = []
-    ideal_len = len(text) / n
+    ideal = len(text) / n
     start = 0
-    
-    for i in range(n - 1):  # 前n-1段需要找切割点，最后一段直接取剩余
-        target_pos = int(ideal_len * (i + 1))
-        
-        # 确保不超过文本长度
-        if target_pos >= len(text):
+    for i in range(1, n):
+        target = int(round(ideal * i))
+        if target <= start:
+            continue
+        if target >= len(text):
             break
-        
-        # 从target_pos往前找最近的\n
-        search_start = max(start, target_pos - 200)  # 最多往前找200字
-        newline_pos = text.rfind('\n', search_start, target_pos + 100)
-        
-        if newline_pos > start:
-            # 找到了\n，在这个位置分段
-            segments.append(text[start:newline_pos])
-            start = newline_pos + 1  # 跳过\n
+        lo = max(start + 1, target - 200)
+        hi = min(len(text) - 1, target + 200)
+        cut = -1
+        nl = text.rfind("\n", lo, hi)
+        if nl >= start:
+            cut = nl + 1
         else:
-            # 找不到\n，强制在target_pos分段
-            segments.append(text[start:target_pos])
-            start = target_pos
-    
-    # 最后一段
+            for ch in "。！？；…":
+                pos = text.rfind(ch, lo, hi)
+                if pos >= start:
+                    cut = pos + 1
+                    break
+        if cut <= start:
+            cut = min(max(target, start + 1), len(text))
+        segments.append(text[start:cut])
+        start = cut
+
     if start < len(text):
         segments.append(text[start:])
-    
     return segments
 
 

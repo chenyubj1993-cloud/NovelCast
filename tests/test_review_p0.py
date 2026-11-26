@@ -87,6 +87,25 @@ def test_numeric_body_line_not_chapter():
     assert len(chapters) == 1
 
 
+def test_split_fixed_segments_keeps_all_chars():
+    from novelcast.dialogue_splitter import _split_fixed_segments
+
+    text = "第一行。\n" * 20
+    segments = _split_fixed_segments(text, 3)
+    assert "".join(segments) == text
+    assert all(segments)
+
+
+def test_short_reference_audio_rejected(tmp_path):
+    import numpy as np
+    import soundfile as sf
+
+    from novelcast.local_tts import _find_ref
+
+    sf.write(tmp_path / "白桦.wav", np.zeros(2400, dtype="float32"), 24000, format="WAV")
+    assert _find_ref(str(tmp_path), "白桦") is None
+
+
 def test_edge_branch_passes_voice_name_not_file_path(tmp_path):
     import numpy as np
     import soundfile as sf

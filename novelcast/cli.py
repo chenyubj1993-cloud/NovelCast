@@ -9,6 +9,7 @@ import os
 import sys
 from pathlib import Path
 
+from novelcast import __version__
 from novelcast.log import log
 
 # 本地依赖（torch/transformers 等）装在 .vendor 里，命令行入口自动挂上去
@@ -99,6 +100,12 @@ def cmd_run(args) -> int:
         )
     )
     log.info(f"\n🎉 完成：{len(result['audios'])} 个音频 → {result['output_dir']}")
+    if not result["audios"] and not args.split_only:
+        log.error("❌ 没有生成任何音频（检查上面的分割/合成错误）")
+        return 1
+    if args.split_only and not result.get("chapters"):
+        log.error("❌ 没有任何章节分割成功")
+        return 1
     return 0
 
 
@@ -176,6 +183,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--config", help="配置文件路径（默认 config/settings.json）")
     p.add_argument("-v", "--verbose", action="store_true", help="输出调试日志")
     p.add_argument("-q", "--quiet", action="store_true", help="只输出错误")
+    p.add_argument("--version", action="version", version=f"novelcast {__version__}")
     sub = p.add_subparsers(dest="command", required=True)
 
     r = sub.add_parser("run", help="一条命令：文档 → 音频")
