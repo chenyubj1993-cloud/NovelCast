@@ -77,7 +77,7 @@ Configuration is read from `config/settings.json` (create it from the example). 
 | `-n, --first-chapters N` | First N chapters only |
 | `--chapters 1,3,5-7` | Explicit chapter numbers |
 | `--first-chars N` | First N characters of each chapter (preview) |
-| `--tts {indextts2,edge,openai,mimoai}` | TTS engine |
+| `--tts {indextts2,edge,openai}` | TTS engine |
 | `--format {wav,m4b}` | per-chapter WAV, or one M4B with chapter marks (needs ffmpeg) |
 | `--model-version {2,2.5}` | IndexTTS version |
 | `--speed 0.5–2.0` | Speed multiplier, smaller is faster (`duration_factor`) |
@@ -165,6 +165,20 @@ python scripts/build_voice_bank.py data/ws4tts --count 28 --style broadcast \
 ```
 
 This yields 24 kHz references (≤12 s, peak −6 dBFS) under `output/_refs/` plus `voice_bank.json` with speaker, gender, age, source and `style`. The cast manager keeps edge voices for the narrator and the top `main_character_count` (6) characters, prefers broadcast-style bank voices for secondary roles, and rotates crowd voices (`众人`/`路人`/unknown) by gender so a scene is not read by one person throughout.
+
+## Tests
+
+`ash
+pip install -e .[dev]
+pytest -q          # ~70+ unit tests, no network, no GPU
+ruff check novelcast scripts tests
+`
+
+Enable the bundled pre-commit hook so a failing test blocks the commit:
+
+`ash
+git config core.hooksPath .githooks
+`
 
 ## Limitations
 

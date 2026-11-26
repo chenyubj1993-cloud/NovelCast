@@ -30,17 +30,19 @@ class LlmCache:
         model: str,
         prompt_version: str,
         root: Optional[Path] = None,
+        base_url: str = "",
     ):
         self.dir = Path(root or (PROJECT_ROOT / "llm_cache")) / _safe(book_name)
         self.dir.mkdir(parents=True, exist_ok=True)
         self.model = model
         self.prompt_version = prompt_version
+        self.base_url = base_url
         self.hits = 0
         self.misses = 0
 
     def _key(self, text: str, context: str = "") -> str:
         h = hashlib.sha1()
-        for part in (self.model, self.prompt_version, context, text):
+        for part in (self.base_url, self.model, self.prompt_version, context, text):
             h.update(part.encode("utf-8"))
             h.update(b"\x00")
         return h.hexdigest()

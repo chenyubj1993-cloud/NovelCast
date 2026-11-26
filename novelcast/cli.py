@@ -68,7 +68,7 @@ def cmd_run(args) -> int:
         return 2
 
     if args.dry_run:
-        rows = plan(chapters)
+        rows = plan(chapters, chars_per_minute=float(config.config.get("chars_per_minute", 282.0)))
         log.info(f"\n📖 {book_name}：{len(chapters)} 章，{sum(r['chars'] for r in rows)} 字")
         for r in rows:
             log.info(

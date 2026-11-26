@@ -218,7 +218,7 @@ def repair_narration(original: str, lines: List[Any], max_chars: int = 40) -> in
     return fixed
 
 
-def dedupe_adjacent(lines: Sequence[Any], min_chars: int = 6) -> tuple:
+def dedupe_adjacent(lines: Sequence[Any], min_chars: int = 12) -> tuple:
     """删掉 LLM 连续重复输出的同一句（同角色、去标点后完全一致）。
 
     LLM 偶尔会把同一句吐两遍（尤其跨 chunk 时把上一段末尾又抄一次），
@@ -229,7 +229,9 @@ def dedupe_adjacent(lines: Sequence[Any], min_chars: int = 6) -> tuple:
     removed = 0
     for line in lines:
         body = _substantive(_text(line))
-        if out and len(body) >= min_chars:
+        raw = _text(line).rstrip()
+        # 短感叹句（「住手！」）本来就可能是连续两次真台词，不当重复删
+        if out and len(body) >= min_chars and not raw.endswith(("！", "？", "!", "?")):
             prev = _substantive(_text(out[-1]))
             if body == prev and _character(line) == _character(out[-1]):
                 removed += 1

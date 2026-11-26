@@ -208,6 +208,14 @@ def build_cast(
         crowd_pool = [v for v in crowd_source if v not in assigned] or crowd_source
     else:
         crowd_pool = [v for v in preset_names if v not in assigned]
+    # 别名（叶秋/叶修、经理/陈夜辉）共用同一个音色
+    for name, info in characters.items():
+        base_voice = voices.get(name)
+        if not base_voice:
+            continue
+        for alias in info.get("aliases") or []:
+            if alias and alias != name:
+                voices.setdefault(alias, base_voice)
     if not crowd_pool:
         crowd_pool = [v for v in dict.fromkeys(voices.values()) if v != narrator]
 

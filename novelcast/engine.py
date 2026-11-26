@@ -170,7 +170,8 @@ async def split_chapter(
             if unknown_idx:
                 try:
                     payload = [{"character": line.character, "text": line.text} for line in lines]
-                    payload, changes = review_unknown(
+                    payload, changes = await asyncio.to_thread(
+                        review_unknown,
                         payload,
                         {name: {} for name in names_from_prompt_map(character_map)},
                         config,

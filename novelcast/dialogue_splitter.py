@@ -69,9 +69,14 @@ def get_llm_cache(book_name: str, character_map: Optional[Dict[str, str]] = None
     prompt = config.config.get("split_prompt", "")
     prompt_version = hashlib.sha1(prompt.encode("utf-8")).hexdigest()[:12]
     map_sig = hashlib.sha1(_cache_context(character_map).encode("utf-8")).hexdigest()[:12]
-    key = (book_name, config.llm_api.model, prompt_version, map_sig)
+    key = (book_name, config.llm_api.base_url, config.llm_api.model, prompt_version, map_sig)
     if key not in _llm_caches:
-        _llm_caches[key] = LlmCache(book_name, config.llm_api.model, prompt_version)
+        _llm_caches[key] = LlmCache(
+            book_name,
+            config.llm_api.model,
+            prompt_version,
+            base_url=config.llm_api.base_url,
+        )
     return _llm_caches[key]
 
 
@@ -196,28 +201,43 @@ def _require_openai():
         raise RuntimeError("未安装 openai 依赖：pip install openai（--offline 模式无需安装）")
 
 
+_LLM_CLIENTS: Dict[tuple, object] = {}
+
+
 def get_llm_client() -> OpenAI:
-    """获取LLM客户端"""
+    """获取LLM客户端（同一 base_url/key 复用，避免每次新建连接池）"""
     _require_openai()
     config = get_config()
     import httpx2
-    return OpenAI(
-        base_url=config.llm_api.base_url,
-        api_key=config.llm_api.api_key,
-        http_client=httpx2.Client(trust_env=False, timeout=120),
-    )
+
+    key = ("sync", config.llm_api.base_url, config.llm_api.api_key)
+    client = _LLM_CLIENTS.get(key)
+    if client is None:
+        client = OpenAI(
+            base_url=config.llm_api.base_url,
+            api_key=config.llm_api.api_key,
+            http_client=httpx2.Client(trust_env=False, timeout=120),
+        )
+        _LLM_CLIENTS[key] = client
+    return client
 
 
 def get_async_llm_client() -> AsyncOpenAI:
-    """获取异步LLM客户端"""
+    """获取异步LLM客户端（同一 base_url/key 复用）"""
     _require_openai()
     config = get_config()
     import httpx2
-    return AsyncOpenAI(
-        base_url=config.llm_api.base_url,
-        api_key=config.llm_api.api_key,
-        http_client=httpx2.AsyncClient(trust_env=False, timeout=120),
-    )
+
+    key = ("async", config.llm_api.base_url, config.llm_api.api_key)
+    client = _LLM_CLIENTS.get(key)
+    if client is None:
+        client = AsyncOpenAI(
+            base_url=config.llm_api.base_url,
+            api_key=config.llm_api.api_key,
+            http_client=httpx2.AsyncClient(trust_env=False, timeout=120),
+        )
+        _LLM_CLIENTS[key] = client
+    return client
 
 
 async def split_dialogues_async(text: str, chapter_title: str, book_name: str, character_map: Optional[Dict[str, str]] = None) -> List[DialogueLine]:
