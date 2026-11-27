@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "novelcast"
-version = "0.2.0"
+version = "0.2.2"
 description = "Turn novels into multi-voice audiobooks: LLM script annotation + local or cloud TTS"
 readme = "README.md"
 license = "MIT"

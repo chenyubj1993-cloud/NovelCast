@@ -1,6 +1,6 @@
 # NovelCast
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) · ![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) · ![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue) · [![CI](https://github.com/chenyubj1993-cloud/NovelCast/actions/workflows/ci.yml/badge.svg)](https://github.com/chenyubj1993-cloud/NovelCast/actions/workflows/ci.yml)
 
 NovelCast turns a novel into a multi-voice audiobook. An LLM reads the book in blocks and casts every line to a character as `{character, text, emotion}`, a book-wide roster keeps each character on one voice from chapter 1 to the end, and local **IndexTTS-2.5** renders each line with its own emotion before merging the lines into chapter files. Annotation, LLM responses and per-line audio are all cached on disk, so an interrupted run resumes instead of starting over. The name is Novel + Cast — the dramatis personae.
 
@@ -18,21 +18,24 @@ NovelCast turns a novel into a multi-voice audiobook. An LLM reads the book in b
 - **40-character line splitting** — longer lines are split losslessly on sentence punctuation (then commas, then a hard cut) to stay under IndexTTS's internal low-VRAM splitting on 8 GB GPUs, which otherwise inserts a mysterious 200 ms pause mid-sentence.
 - **Loudness normalization** — each chapter is normalized to `loudness_lufs` (−18 LUFS by default) with peaks capped, and gaps between consecutive dialogue lines are shorter than after narration.
 - **Per-line emotion** — text mode turns each `emotion` tag into a Chinese delivery prompt (e.g. “有些不悦，语气稍沉”) with deliberately narrow speed changes; alternatively an 8-dimension emotion vector, or off entirely.
-- **Input formats** — `.epub` (spine order), `.txt` (UTF-8 / GBK / GB2312 / UTF-16), `.docx`, `.doc`.
+- **Input formats** — `.epub` (spine order), `.txt` (UTF-8 / GBK / GB2312 / UTF-16, BOM tolerated), `.docx`, `.doc`.
 - **Voice bank** — build real-speaker references from open corpora; secondary characters and crowd lines draw from it while the narrator and leads keep stable synthetic voices.
 - **Dry run, chapter selection, offline replay** — `--dry-run` prints the plan, `--chapters`/`-n` pick chapters, `--offline` re-renders existing scripts with no LLM call.
+- **M4B export** — `--format m4b` writes one file with chapter marks (needs an external `ffmpeg`).
 
 ## Install
 
 Requires **Python 3.11–3.12**.
 
 ```bash
-git clone https://github.com/<you>/NovelCast.git
+git clone https://github.com/chenyubj1993-cloud/NovelCast.git
 cd NovelCast
 pip install -e ".[dev]"
+novelcast --version
+novelcast doctor
 ```
 
-- **No FFmpeg required.** Audio is decoded, resampled and concatenated in-process with `soundfile` and `soxr`; nothing shells out to `ffmpeg`.
+- **No FFmpeg required for WAV output.** Audio is decoded, resampled and concatenated in-process with `soundfile` and `soxr`; only `--format m4b` shells out to `ffmpeg`.
 - The base install is pure Python and light: `torch` and the IndexTTS runtime are **not** pulled in. Install them yourself for local synthesis.
 - **Model weights are not in the repo.** Put IndexTTS-2.5 (~5.1 GB) into `models/IndexTTS-2.5`:
 
@@ -57,15 +60,27 @@ No GPU? Use `--tts edge` (free, online) — the whole pipeline works without any
 
 ## Quick start
 
+The repo ships `examples/sample.txt` (two short chapters) so the first run needs nothing else:
+
 ```bash
-novelcast doctor                        # Python, key deps, CUDA, model dir, provider
-novelcast run book.epub -n 2 --tts edge # dependency-free smoke test: no local models, no GPU
-novelcast run book.epub --dry-run       # print the plan, call nothing
-novelcast run book.epub -n 2            # full local run, first two chapters
-novelcast run book.epub -o out/my-book  # output somewhere other than output/<book>_有声书/
+novelcast doctor                                     # Python, key deps, CUDA, model dir, provider
+novelcast run examples/sample.txt -n 1 --dry-run     # plan only: chars, segments, estimated minutes
+novelcast run examples/sample.txt -n 1 --tts edge    # dependency-free smoke test, no GPU
+novelcast run examples/sample.txt -n 2 --format m4b  # one M4B with chapter marks (needs ffmpeg)
 ```
 
-Configuration is read from `config/settings.json` (create it from the example). The global `--config` flag goes **before** the subcommand: `novelcast --config my.json run book.epub`.
+- Any path works: `novelcast run D:\books\my-book.epub`. `input/` is just a habit, it is **not** in the repo.
+- LLM access is required for annotation. Copy the example config and put a real key in it:
+
+```bash
+cp config/settings.example.json config/settings.json
+# edit llm_api.base_url / api_key / model (defaults target DeepSeek, OpenAI-compatible)
+```
+
+The placeholder in the example file is `your_llm_api_key_here` — replace the whole string; leaving it in makes the first request fail with 401.
+
+- Output priority: `-o/--output` > `output_dir` in `config/settings.json` > `output/`; each book gets a `<book>_有声书` subdirectory.
+- The legacy entry point `python scripts/generate.py ...` still works, but there `-c` means “first N chapters”, while `--chapters 2` in `novelcast run` means “chapter 2”.
 
 ### CLI reference
 
@@ -73,6 +88,7 @@ Configuration is read from `config/settings.json` (create it from the example). 
 |---|---|
 | `novelcast run <file>` | Document → audio |
 | `novelcast doctor` / `novelcast config` | Check the environment / print merged config |
+| `novelcast --version` | Print the installed version |
 | `-o, --output` | Output directory (default `output/<book>_有声书`) |
 | `-n, --first-chapters N` | First N chapters only |
 | `--chapters 1,3,5-7` | Explicit chapter numbers |
@@ -82,6 +98,7 @@ Configuration is read from `config/settings.json` (create it from the example). 
 | `--model-version {2,2.5}` | IndexTTS version |
 | `--speed 0.5–2.0` | Speed multiplier, smaller is faster (`duration_factor`) |
 | `--emotion-mode {text,vector,off}` | How emotion drives delivery |
+| `--roster {full,off}` | Pre-scan the book for characters or skip stage 0 |
 | `--dry-run` / `--split-only` | Plan only / annotate only |
 | `--offline` | Reuse existing scripts, never call the LLM |
 | `--fresh` / `--restart` | Wipe everything / keep scripts, re-render audio |
@@ -105,7 +122,7 @@ No GPU? Point synthesis at any service that implements `POST /v1/audio/speech` (
 `OPENAI_BASE_URL` / `OPENAI_API_KEY` are used when the config fields are empty. Then:
 
 ```bash
-novelcast run input/book.epub -n 2 --tts openai
+novelcast run examples/sample.txt -n 1 --tts openai
 ```
 
 - `cloud_voices` holds **provider voice ids**, not local files; `character_voices` overrides must be cloud ids too.
@@ -122,8 +139,8 @@ Start from [`config/settings.example.json`](config/settings.example.json), copy 
 | `roster_mode` | `full` pre-scans the whole book for characters; `off` skips it | `full` |
 | `tts.max_segment_chars` | max chars per TTS segment; `null` = auto (40 local, 120 edge/cloud) | `null` |
 | `tts.cloud_concurrency` | parallel requests for edge/cloud TTS | `4` |
-| `tts.provider` | `mimoai` (cloud), `indextts2` or `edge` | `mimoai` in code; the example file ships `indextts2` |
-| `tts.model_version` | `"2"` or `"2.5"`; 2.5 enables `<字\|拼音>` annotations and duration control | `"2"` |
+| `tts.provider` | `edge` (online, no key), `indextts2` (local) or `openai` (cloud) | `edge` |
+| `tts.model_version` | `"2"` or `"2.5"`; 2.5 enables `<字\|拼音>` annotations and duration control | `"2.5"` |
 | `tts.duration_factor` | 0.5–2.0, smaller is faster | `1.0` |
 | `tts.emotion_mode` | `text`, `vector` or `off` | `text` |
 | `tts.emo_alpha` | Emotion strength, 0–1 (1.0 is loudest and tiring) | `0.55` |
@@ -131,6 +148,7 @@ Start from [`config/settings.example.json`](config/settings.example.json), copy 
 | `tts.silence_narration` / `silence_dialogue` | Gap after narration / between dialogue lines | `0.4` / `0.15` |
 | `generation.chunk_size` | Characters per annotation block | `1500` |
 | `concurrency.llm_concurrency` / `tts_concurrency` | Segments per block / TTS requests in flight | `3` / `5` |
+| `min_coverage` | Reject a script whose text coverage is below this | `0.7` |
 | `voice_presets`, `character_voices` | Voice name → engine voice; per-character overrides | — |
 | `voice_bank` | Path to a `voice_bank.json` built from open corpora | `output/_refs/voice_bank.json` |
 
@@ -168,17 +186,54 @@ This yields 24 kHz references (≤12 s, peak −6 dBFS) under `output/_refs/` pl
 
 ## Tests
 
-`ash
-pip install -e .[dev]
-pytest -q          # ~70+ unit tests, no network, no GPU
+```bash
+pip install -e ".[dev]"
+pytest -q          # 224 unit tests, no network, no GPU
 ruff check novelcast scripts tests
-`
+```
 
 Enable the bundled pre-commit hook so a failing test blocks the commit:
 
-`ash
+```bash
 git config core.hooksPath .githooks
-`
+```
+
+On Windows the hook needs `NOVELCAST_PYTHON` pointing at the interpreter that has the dependencies installed.
+
+## Troubleshooting
+
+### `pip install` fails with “Missing dependencies for SOCKS support”
+A Windows system proxy of the form `socks=127.0.0.1:xxxx` makes pip attempt SOCKS without `PySocks`. Either turn the system proxy off, or install from a mirror that you can reach directly:
+
+```powershell
+pip install -e ".[dev]" -i https://pypi.tuna.tsinghua.edu.cn/simple
+```
+
+### `pip install` hangs at “Installing build dependencies”
+Install the build tools first, then skip build isolation:
+
+```bash
+pip install setuptools wheel -i https://pypi.tuna.tsinghua.edu.cn/simple
+pip install -e ".[dev]" --no-build-isolation
+```
+
+### “Unexpected UTF-8 BOM” / config silently ignored
+`config/settings.json` was saved as UTF-8 with BOM (PowerShell `Set-Content -Encoding UTF8` does this). Current versions read it fine; on older versions re-save as plain UTF-8. Other common causes: a trailing comma or Chinese quotation marks.
+
+### 401 / 403: LLM authentication failed
+`llm_api.api_key` is still the placeholder (`your_llm_api_key_here`), or `base_url` / `model` does not match the key. The CLI now stops immediately with this message instead of retrying and splitting for minutes.
+
+### `--tts edge` produces nothing
+edge-tts needs outbound access to Microsoft's online speech service; corporate proxies often block it. Try another network or switch to `--tts indextts2` (local).
+
+### M4B export says ffmpeg is missing
+`--format m4b` needs an external `ffmpeg`: `winget install Gyan.FFmpeg` (Windows), `brew install ffmpeg` (macOS), `sudo apt install ffmpeg` (Ubuntu). Without it, export WAV.
+
+### Coverage below 70%
+The script is rejected and the chapter is marked failed. Try a smaller `generation.chunk_size`, check the source for TOC/ad pages, or run `--split-only` and inspect `*_readable.txt` to see what was lost.
+
+### API timeouts
+A single request times out after 90 s; long texts are split in half on timeout, short ones retry up to 3 times (5 s / 10 s back-off). If a whole book times out, use a faster model or a smaller `chunk_size`.
 
 ## Limitations
 
@@ -188,6 +243,8 @@ git config core.hooksPath .githooks
 - IndexTTS runs **serially**, one line at a time: RTF ≈ 1.1–1.9 on an 8 GB laptop GPU, first load 1–2 minutes. Resume saves wasted work, not wall-clock per chapter.
 - With `--model-version 2`, pronunciation annotations such as `<重|CHONG2>` are read aloud literally; they only exist in 2.5.
 - `.mobi` is **not** supported by the reader — `.epub`, `.txt`, `.docx` and `.doc` only.
+- `--tts edge` requires network access; offline machines need the local model.
+- M4B export is unit-tested but has not been exercised end-to-end in CI (no ffmpeg on the runners).
 
 ## Data and licenses
 

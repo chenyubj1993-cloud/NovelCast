@@ -53,6 +53,7 @@ NovelCast/
 
 ```bash
 pip install -e ".[dev]"          # 轻量依赖；torch / IndexTTS 运行时另装
+novelcast --version              # 确认安装成功
 novelcast doctor                 # 检查依赖、CUDA、模型目录
 novelcast run examples/sample.txt -n 1 --dry-run      # 先看计划：字数/段数/预计时长
 novelcast run examples/sample.txt -n 1 --tts edge     # 不装模型先跑通（在线 edge 音色）
@@ -104,16 +105,16 @@ novelcast doctor
 
 ```bash
 # 生成全部章节
-novelcast run input/测试短文.txt
+novelcast run examples/sample.txt
 
 # 只生成前 2 章
-novelcast run input/测试短文.txt -n 2
+novelcast run examples/sample.txt -n 2
 
 # 只生成第 2 章
-novelcast run input/测试短文.txt --chapters 2
+novelcast run examples/sample.txt --chapters 2
 
 # 重跑：保留剧本、重合成音频
-novelcast run input/测试短文.txt -n 2 --restart
+novelcast run examples/sample.txt -n 2 --restart
 
 # 离线：直接复用已有剧本，不调用 LLM（剧本可由人工或其他模型生成）
 novelcast run input/全职高手.epub --chapters 1 --offline --split-only
@@ -576,6 +577,14 @@ M4B 需要外部 `ffmpeg`：Windows `winget install Gyan.FFmpeg`，macOS `brew i
 1. 在 `novelcast/` 目录创建新文件
 2. 在 `novelcast/__init__.py` 中导出
 3. 在需要的地方导入使用
+
+### 运行测试
+```bash
+pip install -e ".[dev]"
+pytest -q          # 224 个单测，不联网、不需要 GPU
+ruff check novelcast scripts tests
+```
+仓库自带 `.githooks/pre-commit`，执行 `git config core.hooksPath .githooks` 后每次提交都会先跑测试；Windows 下需设置 `NOVELCAST_PYTHON` 指向装好依赖的解释器。
 
 ### 修改配置
 直接编辑 `config/settings.json`，或运行 `novelcast config` 查看当前配置
