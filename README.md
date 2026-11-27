@@ -54,12 +54,12 @@ NovelCast/
 ```bash
 pip install -e ".[dev]"          # 轻量依赖；torch / IndexTTS 运行时另装
 novelcast doctor                 # 检查依赖、CUDA、模型目录
-novelcast run input/全职高手.epub -n 2 --dry-run   # 先看计划：字数/段数/预计时长
-novelcast run input/全职高手.epub -n 1 --tts edge  # 不装模型先跑通（在线 edge 音色）
-novelcast run input/全职高手.epub -n 2 -o output/全职高手
-novelcast run input/全职高手.epub -n 2 --format m4b   # 导出带章节的 M4B（需要 ffmpeg）
+novelcast run examples/sample.txt -n 1 --dry-run      # 先看计划：字数/段数/预计时长
+novelcast run examples/sample.txt -n 1 --tts edge     # 不装模型先跑通（在线 edge 音色）
+novelcast run examples/sample.txt -n 2 --format m4b   # 导出带章节的 M4B（需要 ffmpeg）
 ```
 
+- 仓库自带 `examples/sample.txt`（两章短文）用来跑通流程；换成自己的书时，路径可以是任意位置，例如 `novelcast run D:\books\我的书.epub`。`input/` 只是习惯目录，不在仓库里。
 - 全部参数见 `novelcast run --help`；`--tts edge` 可以不下载模型先跑通整条流程。
 - 输出目录优先级：`-o/--output` > `config/settings.json` 的 `output_dir` > 默认 `output/`；每本书会自动加 `<书名>_有声书` 子目录。
 - 输入格式：`.txt` / `.epub` / `.docx` / `.doc`（`.mobi` 需先转换）。
@@ -92,6 +92,7 @@ cp config/settings.example.json config/settings.json
 
 > **注意**：默认 `tts.provider = edge`，用微软在线语音，不需要 TTS key；`tts_api` 只在旧的 mimoai 路径下才用。
 > LLM 只用于剧本分割，默认 DeepSeek（OpenAI 兼容）。
+> 示例文件里的占位符是 `your_llm_api_key_here`，请整段替换成真实 key；原样保留调用会返回 401。
 
 ### 2. 检查环境
 
@@ -534,41 +535,40 @@ python scripts/scan_pronunciation.py ... --llm --write
 
 ## 故障排除
 
-### asyncio.Lock() 错误
-已修复。使用延迟创建Lock的方案，确保绑定到正确的事件循环。
+### `pip install` 报 “Missing dependencies for SOCKS support”
+Windows 系统代理如果是 `socks=127.0.0.1:xxxx` 形式，pip 会尝试用 SOCKS 代理但没有装 `PySocks`。任选其一：
 
-### 并发架构说明（2026-05-22更新）
-
-**两层分割架构**：
-1. **章节级**：按 `chunk_size`（默认1500字）将章节分成多个块
-2. **块级**：每个块固定分成 `llm_concurrency`（默认3）段并发处理
-
-**执行流程**：
-```
-章节 (3000字)
-  ├── 块1 (1500字) → 段1(500字) + 段2(500字) + 段3(500字) → 并发3个
-  └── 块2 (1500字) → 段1(500字) + 段2(500字) + 段3(500字) → 并发3个
+```powershell
+# A. 暂时关闭系统代理（设置 → 网络和 Internet → 代理 → 手工设置代理，关掉）
+# B. 或改用国内镜像（仍需能直连镜像）
+pip install -e ".[dev]" -i https://pypi.tuna.tsinghua.edu.cn/simple
 ```
 
-**特点**：
-- 块内并发：同一块的各段使用 `asyncio.gather` 并发执行
-- 块间串行：块1完成后才处理块2
-- 章节只对音频合并有用：同一章的音频会合并成一个文件
+### `pip install` 很慢或卡在 “Installing build dependencies”
+先单独装构建工具，再安装本项目：
 
-### API超时处理（2026-05-22更新）
-- API调用超时：90秒
-- 超时且字数>1000字：直接拆分，不重试（明显是字数太多导致处理慢）
-- 超时且字数≤1000字：最多重试3次（递增等待5秒、10秒）
+```bash
+pip install setuptools wheel -i https://pypi.tuna.tsinghua.edu.cn/simple
+pip install -e ".[dev]" --no-build-isolation
+```
 
-### API连接失败
-1. 检查 `config/settings.json` 中的API配置
-2. 运行 `novelcast doctor` 检查配置
-3. 检查网络连接和API密钥
+### 配置读取失败 / 提示 “Unexpected UTF-8 BOM”
+`config/settings.json` 被编辑器存成了带 BOM 的 UTF-8。用 VS Code 另存为「UTF-8」即可（本项目已兼容 BOM，旧版本会退回默认配置）。其他常见原因是 JSON 结尾多了逗号、用了中文引号。
 
-### 覆盖率过低
-如果LLM分割覆盖率低于70%，系统会自动降级到简单分割。可以尝试：
-1. 减小 `chunk_size` 配置
-2. 检查原文格式是否规范
+### 401 / 403：LLM 认证失败
+`config/settings.json` 里的 `llm_api.api_key` 还是占位符（示例文件是 `your_llm_api_key_here`），或者 `base_url` / `model` 与 key 不匹配。命令行现在会直接报错退出，不会再反复重试拆分。
+
+### edge 合成失败或没声音
+`--tts edge` 需要联网访问微软的在线语音服务。公司网络/代理下可能超时；先换一个网络，或改用 `--tts indextts2`（本地）。
+
+### 导出 M4B 时提示缺少 ffmpeg
+M4B 需要外部 `ffmpeg`：Windows `winget install Gyan.FFmpeg`，macOS `brew install ffmpeg`，Ubuntu `sudo apt install ffmpeg`。没有 ffmpeg 时先导出 wav。
+
+### 覆盖率过低（< 70%）
+系统会自动降级到按标点切分。可尝试：减小 `generation.chunk_size`、检查原文是否混入目录/广告、或先 `--split-only` 看 `*_readable.txt` 里丢在哪。
+
+### API 超时
+单次请求 90 秒超时；超时且文本较长时直接对半拆分，短文本最多重试 3 次（5s/10s 递增）。如果整本书都超时，换更快的模型或减小 `chunk_size`。
 
 ## 开发说明
 

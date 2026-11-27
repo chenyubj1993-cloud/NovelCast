@@ -296,13 +296,17 @@ class ConfigManager:
         """加载配置文件"""
         if self.config_path.exists():
             try:
-                with open(self.config_path, 'r', encoding='utf-8') as f:
+                with open(self.config_path, 'r', encoding='utf-8-sig') as f:
                     user_config = json.load(f)
                 # 深度合并配置
                 self._merge_config(self.config, user_config)
                 log.info(f"✅ 已加载配置: {self.config_path}")
             except Exception as e:
-                log.info(f"⚠️ 配置文件加载失败，使用默认配置: {e}")
+                log.info(
+                    f"⚠️ 配置文件加载失败，使用默认配置: {e}\n"
+                    f"   请检查 {self.config_path} 的 JSON 语法"
+                    "（常见原因：文件开头有 BOM、结尾多了逗号、中文引号）"
+                )
         else:
             # 首次运行，保存默认配置
             self.save_config()

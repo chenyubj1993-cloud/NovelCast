@@ -1042,6 +1042,16 @@ async def _recursive_split_by_moderation_async(
                 return await _handle_moderation_split_async(client, text, chapter_title, chunk_prefix, book_name, depth, max_depth, character_map)
         except Exception as e:
             error_type = type(e).__name__
+            # 认证/权限问题重试和拆分都不会变好，直接给出可操作的报错
+            if getattr(e, "status_code", None) in (401, 403) or error_type in (
+                "AuthenticationError",
+                "PermissionDeniedError",
+            ):
+                raise ValueError(
+                    "LLM 认证失败（401/403）：请检查 config/settings.json 里的 "
+                    "llm_api.api_key、llm_api.base_url、llm_api.model 是否正确。\n"
+                    f"原始错误：{e}"
+                ) from e
             api_error_count += 1
             if api_error_count < max_api_retries:
                 wait_time = api_error_count * 5  # 递增等待：5秒、10秒
