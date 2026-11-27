@@ -167,3 +167,9 @@ def test_save_config_roundtrip(tmp_path):
     reloaded = ConfigManager(config_path=str(path))
 
     assert reloaded.generation.chunk_size == 777
+
+def test_config_with_bom_is_loaded(tmp_path):
+    path = tmp_path / "settings_bom.json"
+    path.write_text('{"llm_api": {"api_key": "bom-key"}}', encoding="utf-8-sig")
+    cm = ConfigManager(config_path=str(path))
+    assert cm.config["llm_api"]["api_key"] == "bom-key"

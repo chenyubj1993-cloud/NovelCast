@@ -99,7 +99,7 @@ def cmd_run(args) -> int:
             audio_format=args.format,
         )
     )
-    log.info(f"\n🎉 完成：{len(result['audios'])} 个音频 → {result['output_dir']}")
+    log.info(f"\n{'🎉' if result['audios'] or args.split_only else '⚠️'} 完成：{len(result['audios'])} 个音频 → {result['output_dir']}")
     if not result["audios"] and not args.split_only:
         log.error("❌ 没有生成任何音频（检查上面的分割/合成错误）")
         return 1

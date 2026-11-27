@@ -316,6 +316,9 @@ async def _split_dialogues_impl_async(client: AsyncOpenAI, text: str, chapter_ti
         # 处理结果
         for si, result in enumerate(seg_results):
             if isinstance(result, Exception):
+                # 认证/配置错误：直接冒泡，别让用户以为只是“LLM 返回空结果”
+                if isinstance(result, ValueError) and "认证失败" in str(result):
+                    raise result
                 log.info(f"    ❌ 块{chunk_idx+1}-段{si+1} 处理失败: {str(result)[:100]}")
             elif result:
                 all_lines.extend(result)

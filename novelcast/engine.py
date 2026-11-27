@@ -215,6 +215,9 @@ async def split_chapter(
             end_time=time.time()
         )
 
+    except ValueError as e:
+        # 认证/配置类错误只报一次，不再逐章吞掉
+        raise ValueError(f"章节 {chapter.number:03d} 处理失败：{e}") from e
     except Exception as e:
         log.info(f"    ❌ 分割失败: {e}")
         return ChapterSplitResult(
